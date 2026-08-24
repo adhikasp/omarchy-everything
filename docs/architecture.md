@@ -155,6 +155,11 @@ yield on the owner loop. The protocol loop therefore keeps reading scan and
 shutdown requests and publishing unrelated provider completions while AT-SPI
 is slow. The shell's correlated two-second scan poll is the sole refresh
 trigger; the helper emits no unsolicited accessibility-event snapshot.
+Owner shutdown never delegates an unbounded thread join to asyncio's default
+executor. It signals cancellation, requests the owner loop to stop, and waits
+within a fixed bound shorter than the shell's force-stop window; the daemon
+owner therefore cannot keep the helper or its test process alive if a native
+call never returns.
 
 Each adapter returns `ProviderResult`: public `Thing` values, nonfatal
 warnings, and private routing metadata. Adapter failure removes only that

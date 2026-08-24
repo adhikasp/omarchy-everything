@@ -109,7 +109,11 @@ helper starts neither a GLib accessibility-event thread nor parallel executor
 jobs that could concurrently mutate libatspi's process-global D-Bus connection
 or accessible cache. Cancellation uses thread-safe flags checked between
 synchronous native calls; owner-loop settle delays remain cancellable without
-crossing the native thread-affinity boundary.
+crossing the native thread-affinity boundary. Owner shutdown is bounded and
+does not submit `Thread.join` to asyncio's non-daemon default executor. The
+owner itself is a daemon thread, so a native call that never returns cannot
+keep the local helper or the Python test process alive after shutdown has been
+requested.
 
 ## Session D-Bus GTK actions
 

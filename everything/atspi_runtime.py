@@ -15,6 +15,8 @@ from typing import Protocol, TypeVar
 
 
 Result = TypeVar("Result")
+AT_SPI_CLOSE_TIMEOUT = 0.5
+AT_SPI_CLOSE_POLL_INTERVAL = 0.01
 _AT_SPI_CANCEL_EVENT: ContextVar[threading.Event | None] = ContextVar(
     "everything_atspi_cancel_event",
     default=None,
@@ -105,21 +107,36 @@ class AtspiExecutor:
             with self._lock:
                 self._cancel_events.discard(cancel_event)
 
-    async def close(self) -> None:
+    async def close(self, *, timeout: float = AT_SPI_CLOSE_TIMEOUT) -> bool:
         with self._lock:
-            if self._closed:
-                return
+            first_close = not self._closed
             self._closed = True
-            events = tuple(self._cancel_events)
+            events = tuple(self._cancel_events) if first_close else ()
             loop = self._loop
         for event in events:
             event.set()
-        if loop is not None:
-            loop.call_soon_threadsafe(loop.stop)
-        # Joining is the only blocking cleanup operation and contains no
-        # native call. Keep it off the protocol loop while in-flight AT-SPI
-        # calls return and observe their cancellation checkpoint.
-        await asyncio.to_thread(self._thread.join)
+        if first_close and loop is not None:
+            try:
+                loop.call_soon_threadsafe(loop.stop)
+            except RuntimeError:
+                # The owner completed between the lock release and the stop
+                # request. is_alive() below remains the source of truth.
+                pass
+
+        # Never hand an unbounded Thread.join to asyncio's default executor.
+        # Its worker is non-daemon and would itself keep the helper or a test
+        # process alive if one libatspi call never returned. Polling the daemon
+        # owner keeps shutdown cancellable and bounded; normal completion still
+        # joins immediately once the owner has released its thread-state lock.
+        timeout = max(0.0, float(timeout))
+        deadline = asyncio.get_running_loop().time() + timeout
+        while self._thread.is_alive():
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                return False
+            await asyncio.sleep(min(AT_SPI_CLOSE_POLL_INTERVAL, remaining))
+        self._thread.join(timeout=0)
+        return True
 
 
 class StatusBackend(Protocol):

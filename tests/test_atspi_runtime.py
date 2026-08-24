@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import threading
 import unittest
+from unittest.mock import patch
 
-from everything.atspi_runtime import AtspiRuntimeLease
+from everything.atspi_runtime import AtspiExecutor, AtspiRuntimeLease
 
 
 class FakeStatus:
@@ -44,6 +47,45 @@ class AtspiLeaseTests(unittest.TestCase):
         self.assertTrue(backend.values["ScreenReaderEnabled"])
 
 
+class AtspiExecutorTests(unittest.IsolatedAsyncioTestCase):
+    async def test_close_is_bounded_without_a_default_executor_joiner(self) -> None:
+        started = threading.Event()
+        release = threading.Event()
+        executor = AtspiExecutor()
+
+        async def blocked_native_call() -> None:
+            started.set()
+            release.wait()
+
+        task = asyncio.create_task(executor.run(blocked_native_call))
+        try:
+            for _attempt in range(100):
+                if started.is_set():
+                    break
+                await asyncio.sleep(0.001)
+            self.assertTrue(started.is_set())
+
+            # A stalled native call cannot be interrupted in the middle of the
+            # call. Shutdown must still return without creating a non-daemon
+            # executor worker that blocks interpreter exit on Thread.join.
+            with patch(
+                "everything.atspi_runtime.asyncio.to_thread",
+                side_effect=AssertionError("close must not create a join worker"),
+            ):
+                stopped = await asyncio.wait_for(
+                    executor.close(timeout=0.02),
+                    0.2,
+                )
+            self.assertFalse(stopped)
+            self.assertTrue(executor._thread.daemon)
+            self.assertTrue(executor._thread.is_alive())
+        finally:
+            if not task.done():
+                task.cancel()
+            release.set()
+            await asyncio.gather(task, return_exceptions=True)
+            self.assertTrue(await executor.close(timeout=0.5))
+
+
 if __name__ == "__main__":
     unittest.main()
-

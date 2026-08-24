@@ -56,7 +56,9 @@ The suite performs:
   same-PID live/unmapped client disambiguation without stale-top rebinding,
   shared dedicated-owner thread affinity for AT-SPI and Ghostty scans and
   activation, protocol-loop responsiveness during a blocking native traversal,
-  and cancellation without publishing a partially settled provider generation,
+  bounded owner shutdown without a non-daemon join worker when a native call
+  remains blocked, and cancellation without publishing a partially settled
+  provider generation,
   D-Bus owner/action/signature/index validation, targeted pre/post
   native-identity checks without unrelated branch traversal, multi-window
   ambiguity, and exclusion of document-authored/tool tab strips;

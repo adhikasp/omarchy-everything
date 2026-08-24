@@ -41,7 +41,9 @@ AT-SPI and Ghostty work runs on a dedicated native-owner loop, so a synchronous
 accessibility traversal cannot prevent the protocol loop from reading either
 request. Cancellation is signaled directly to that owner and checked between
 native calls; no later partial or full snapshot is emitted for the cancelled
-request.
+request. Shutdown waits only for the owner's bounded cleanup interval. A native
+call that fails to return cannot hold the helper past the shell's force-stop
+window.
 Snapshots are emitted only for explicit scan requests. `Service.qml` supplies
 the periodic liveness poll; the helper does not publish unsolicited AT-SPI
 event snapshots, so every snapshot remains correlated to a current caller ID.
