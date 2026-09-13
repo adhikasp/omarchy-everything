@@ -103,7 +103,11 @@ class JsonLineServer:
                 request_type = str(message.get("type") or "")
                 if request_type == "scan":
                     options = message.get("options") if isinstance(message.get("options"), dict) else {}
-                    await self._start_scan(request_id, bool(options.get("ghostty")))
+                    await self._start_scan(
+                        request_id,
+                        options.get("ghostty") is True,
+                        options.get("ghosttyPalette") is True,
+                    )
                 elif request_type == "activate":
                     item_id = str(message.get("itemId") or "")
                     token = str(message.get("token") or "")
@@ -124,13 +128,19 @@ class JsonLineServer:
         finally:
             transport.close()
 
-    async def _start_scan(self, request_id: str, include_ghostty: bool) -> None:
+    async def _start_scan(
+        self, request_id: str, include_ghostty: bool, allow_ghostty_palette: bool
+    ) -> None:
         if self.scan_task and not self.scan_task.done():
             self.scan_task.cancel()
             await asyncio.gather(self.scan_task, return_exceptions=True)
         assert self.manager is not None
         self.scan_task = asyncio.create_task(
-            self.manager.scan(request_id, include_ghostty=include_ghostty), name=f"scan:{request_id}"
+            self.manager.scan(
+                request_id,
+                include_ghostty=include_ghostty,
+                allow_ghostty_palette=allow_ghostty_palette,
+            ), name=f"scan:{request_id}"
         )
 
     async def _protocol_error(self, request_id: str, message: str) -> None:

@@ -25,6 +25,14 @@ Panel {
   readonly property var supportedGroups: Model.supportedGroupCatalog()
   readonly property var disabledKinds: Model.normalizeDisabledKinds(
     root.setting("disabledKinds", []))
+  readonly property bool ghosttyPaletteEnabled: root.setting("ghosttyPalette", false) === true
+  readonly property bool ghosttyPaletteRequested: ghosttyPaletteEnabled
+    && !kindDisabled("terminal-pane")
+  readonly property var checklistEntries: supportedGroups.concat([{
+    setting: "ghosttyPalette",
+    sectionLabel: "Ghostty panes (opens command palette)",
+    icon: Model.kindIcon("terminal-pane")
+  }])
   readonly property color foreground: root.bar ? root.bar.foreground : Color.foreground
   readonly property color dimForeground: Qt.darker(foreground, 1.55)
   readonly property real rowHeight: Style.font.body * 1.5
@@ -65,9 +73,13 @@ Panel {
     var nextKinds = Model.normalizeDisabledKinds(value)
     if (Model.sameStringList(disabledKinds, nextKinds)) return
 
+    persistSetting("disabledKinds", nextKinds)
+  }
+
+  function persistSetting(name, value) {
     var entry = { id: root.moduleName }
     for (var key in root.settings) if (key !== "id") entry[key] = root.settings[key]
-    entry.disabledKinds = nextKinds
+    entry[name] = value
 
     // Update this monitor immediately. The shell write then injects the same
     // settings object into every live monitor instance without rebuilding it.
@@ -100,8 +112,14 @@ Panel {
     setKindEnabled(kind, kindDisabled(kind))
   }
 
+  function toggleChecklistEntry(entry) {
+    if (entry.setting === "ghosttyPalette")
+      persistSetting("ghosttyPalette", !ghosttyPaletteEnabled)
+    else toggleKindVisibility(entry.kind)
+  }
+
   function resetGroupChecklist() {
-    groupList.currentIndex = supportedGroups.length > 0 ? 0 : -1
+    groupList.currentIndex = checklistEntries.length > 0 ? 0 : -1
     groupList.contentY = groupList.originY
     Qt.callLater(function() {
       if (root.opened && root.popupMode === root.groupsMode)
@@ -141,18 +159,18 @@ Panel {
   }
 
   function setGroupChecklistIndex(index) {
-    if (supportedGroups.length <= 0) {
+    if (checklistEntries.length <= 0) {
       groupList.currentIndex = -1
       return
     }
-    var bounded = Math.max(0, Math.min(supportedGroups.length - 1,
+    var bounded = Math.max(0, Math.min(checklistEntries.length - 1,
       Math.floor(Number(index || 0))))
     groupList.currentIndex = bounded
     groupList.positionViewAtIndex(bounded, ListView.Contain)
   }
 
   function moveGroupChecklist(delta) {
-    if (supportedGroups.length <= 0 || Number(delta || 0) === 0) return
+    if (checklistEntries.length <= 0 || Number(delta || 0) === 0) return
     var current = groupList.currentIndex < 0 ? 0 : groupList.currentIndex
     setGroupChecklistIndex(current + (delta < 0 ? -1 : 1))
     groupList.forceActiveFocus()
@@ -160,8 +178,8 @@ Panel {
 
   function toggleCurrentGroupVisibility() {
     var index = groupList.currentIndex
-    if (index < 0 || index >= supportedGroups.length) return
-    toggleKindVisibility(supportedGroups[index].kind)
+    if (index < 0 || index >= checklistEntries.length) return
+    toggleChecklistEntry(checklistEntries[index])
   }
 
   function selectFromPointer(index, item, mouse) {
@@ -553,15 +571,20 @@ Panel {
 
   onResultsModeOpenChanged: {
     if (!everythingService) return
-    if (resultsModeOpen) everythingService.acquire(instanceKey)
+    if (resultsModeOpen) everythingService.acquire(instanceKey, ghosttyPaletteRequested)
     else everythingService.release(instanceKey)
   }
 
   onEverythingServiceChanged: {
-    if (resultsModeOpen && everythingService) everythingService.acquire(instanceKey)
+    if (resultsModeOpen && everythingService)
+      everythingService.acquire(instanceKey, ghosttyPaletteRequested)
     scheduleRankedItems()
   }
   onDisabledKindsChanged: scheduleRankedItems()
+  onGhosttyPaletteRequestedChanged: {
+    if (resultsModeOpen && everythingService)
+      everythingService.acquire(instanceKey, ghosttyPaletteRequested)
+  }
   Component.onCompleted: scheduleRankedItems()
   Component.onDestruction: if (everythingService) everythingService.release(instanceKey)
 
@@ -985,7 +1008,7 @@ Panel {
         visible: root.popupMode === root.groupsMode
         enabled: visible
         clip: true
-        model: root.supportedGroups
+        model: root.checklistEntries
         currentIndex: 0
         activeFocusOnTab: true
         boundsBehavior: Flickable.StopAtBounds
@@ -1009,23 +1032,26 @@ Panel {
           id: groupRow
           required property var modelData
           required property int index
-          objectName: "everything-group-" + modelData.kind
+          objectName: modelData.setting ? "everything-setting-" + modelData.setting
+            : "everything-group-" + modelData.kind
           width: groupList.width
           height: root.groupChecklistRowHeight
-          readonly property bool checked: !root.kindDisabled(modelData.kind)
+          readonly property bool checked: modelData.setting === "ghosttyPalette"
+            ? root.ghosttyPaletteEnabled : !root.kindDisabled(modelData.kind)
           readonly property bool highlighted: groupList.currentIndex === index
             && (groupList.activeFocus || keyCatcher.activeFocus)
 
           function activate() {
             root.setGroupChecklistIndex(index)
             groupList.forceActiveFocus()
-            root.toggleKindVisibility(modelData.kind)
+            root.toggleChecklistEntry(modelData)
           }
 
           Accessible.role: Accessible.CheckBox
           Accessible.name: modelData.sectionLabel
-          Accessible.description: checked
-            ? "Shown in Everything search results" : "Hidden from Everything search results"
+          Accessible.description: modelData.setting === "ghosttyPalette"
+            ? "Optional pane discovery opens Ghostty's command palette; Terminal panes must also be checked"
+            : (checked ? "Shown in Everything search results" : "Hidden from Everything search results")
           Accessible.checkable: true
           Accessible.checked: checked
           Accessible.focusable: true

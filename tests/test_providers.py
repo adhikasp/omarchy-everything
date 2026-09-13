@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import socket
@@ -7,14 +8,18 @@ import tempfile
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from everything.atspi_runtime import _AT_SPI_CANCEL_EVENT
 from everything.commands import CommandError, CommandResult
 from everything.processes import ProcTable, ProcessInfo
+from everything.providers.atspi import NativeTab, TopLevel
 from everything.providers.base import ScanContext, route_for_process
 from everything.providers.ghostty import (
     Atspi,
     EffectiveBinding,
     GhosttyProvider,
+    PaletteFingerprint,
     PaletteState,
+    PaletteUnavailable,
     parse_keybindings,
 )
 from everything.providers.hyprland import HyprlandProvider
@@ -161,8 +166,11 @@ class FakePaletteAccessible:
         self.name = name
         self.children = list(children)
         self.editable = editable
+        self.text = ""
+        self.accept_text = True
+        self.action = None
         self.parent = None
-        self.path = "fake:" + name
+        self.path = "fake:" + str(id(self))
         for child in self.children:
             child.parent = self
 
@@ -194,10 +202,63 @@ class FakePaletteAccessible:
         return self if self.editable else None
 
     def get_text_iface(self):
-        return None
+        return self if self.editable else None
+
+    def get_text(self, _start, _end):
+        return self.text
+
+    def set_text_contents(self, value):
+        if self.accept_text:
+            self.text = value
+        return True
+
+    def get_action_iface(self):
+        return self if self.action else None
+
+    def get_n_actions(self):
+        return 1
+
+    def get_action_name(self, _index):
+        return "win.toggle-command-palette"
+
+    def do_action(self, _index):
+        return self.action()
 
     def get_accessible_id(self):
         return self.path
+
+
+class FakeGhostty:
+    def __init__(self, *, editable=True, accept_text=True):
+        self.search = FakePaletteAccessible(Atspi.Role.ENTRY, "", editable=editable)
+        self.search.accept_text = accept_text
+        branch = self.search
+        for _ in range(13):
+            branch = FakePaletteAccessible(Atspi.Role.PANEL, "", branch)
+        self.list_view = FakePaletteAccessible(
+            Atspi.Role.LIST, "", FakePaletteAccessible(Atspi.Role.LIST_ITEM, "Focus: Shell")
+        )
+        self.dialog = FakePaletteAccessible(Atspi.Role.DIALOG, "", branch, self.list_view)
+        self.frame = FakePaletteAccessible(Atspi.Role.FRAME, "Shell")
+        self.frame.action = self.toggle
+        self.application = FakePaletteAccessible(Atspi.Role.APPLICATION, "Ghostty", self.frame)
+        self.opened = False
+        self.toggles = 0
+        self.client = {"pid": 17, "address": "0xabc", "class": "com.mitchellh.ghostty"}
+        self.top = TopLevel(self.application, self.frame, 17, 0, "Shell", self.client)
+        self.tabs = [NativeTab(self.frame, self.top, (), (), 0, "Shell", True, "tab-1")]
+
+    def toggle(self):
+        self.toggles += 1
+        self.opened = not self.opened
+        self.application.children = [self.frame, self.dialog] if self.opened else [self.frame]
+        self.dialog.parent = self.application if self.opened else None
+        return True
+
+    def context(self, *, allow=True, refresh=True):
+        return ScanContext(FakeRunner("Ghostty 1.3.1"), ProcTable({}),
+                           hypr_clients=[self.client], include_ghostty=refresh,
+                           allow_ghostty_palette=allow)
 
 
 class GhosttyPaletteTests(unittest.IsolatedAsyncioTestCase):
@@ -251,25 +312,158 @@ class GhosttyPaletteTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('state = "up"', expressions[1])
         self.assertTrue(all("sendshortcut" not in value for value in expressions))
 
-    async def test_palette_action_has_capability_checked_binding_fallback(self) -> None:
-        class CapabilityRunner:
-            async def run(self, argv, **_kwargs):
-                command = tuple(str(value) for value in argv)
-                if command[1] == "+list-actions":
-                    return CommandResult(command, 0, "toggle_command_palette\n", "")
-                return CommandResult(
-                    command, 0, "keybind = ctrl+shift+p=toggle_command_palette\n", ""
-                )
-
-        provider = GhosttyProvider()
-        provider._send_binding = AsyncMock()  # type: ignore[method-assign]
-        context = ScanContext(CapabilityRunner(), ProcTable({}))  # type: ignore[arg-type]
+    async def test_palette_without_a_native_toggle_never_injects_an_opening_binding(self) -> None:
         top = type("Top", (), {"accessible": object(), "client": {"address": "0xabc"}})()
         with patch("everything.providers.ghostty.walk", return_value=[]):
-            await provider._toggle_command_palette(context, top)  # type: ignore[arg-type]
-        provider._send_binding.assert_awaited_once_with(  # type: ignore[attr-defined]
-            context, "0xabc", EffectiveBinding("CTRL + SHIFT", "P")
-        )
+            with self.assertRaises(PaletteUnavailable):
+                GhosttyProvider._command_palette_toggle(top)
+
+
+@unittest.skipIf(Atspi is None, "PyGObject AT-SPI is unavailable")
+class GhosttyLifecycleTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.focus = self.enterContext(patch("everything.providers.ghostty.focus_address", new=AsyncMock()))
+
+    async def test_unnamed_deep_search_uses_its_own_modal(self):
+        ghostty = FakeGhostty()
+        ghostty.toggle()
+        palette = GhosttyProvider._find_palette(ghostty.application)
+        self.assertIsNotNone(palette)
+        self.assertIs(palette.search, ghostty.search)
+        self.assertIs(palette.container, ghostty.dialog)
+        ghostty.application.children = [ghostty.frame, ghostty.search, ghostty.list_view]
+        ghostty.search.parent = ghostty.application
+        self.assertIsNone(GhosttyProvider._find_palette(ghostty.application))
+
+    async def test_failed_detection_and_uncommitted_query_close_through_the_opening_action(self):
+        for options in ({"editable": False}, {"accept_text": False}):
+            with self.subTest(options=options):
+                ghostty = FakeGhostty(**options)
+                context = ghostty.context()
+                provider = GhosttyProvider()
+                with self.assertRaises(PaletteUnavailable):
+                    await provider._enumerate_palette(context, ghostty.top)
+                self.assertFalse(ghostty.opened)
+                self.assertEqual(ghostty.toggles, 2)
+                self.assertFalse(any("dispatch" in call for call in context.runner.calls))
+
+    async def test_cleanup_survives_owner_cancellation_flag(self):
+        import threading
+
+        ghostty = FakeGhostty()
+        provider = GhosttyProvider()
+        context = ghostty.context()
+        cancelled = threading.Event()
+        token = _AT_SPI_CANCEL_EVENT.set(cancelled)
+        try:
+            with self.assertRaises(asyncio.CancelledError):
+                async with provider._palette_session(context, ghostty.top):
+                    cancelled.set()
+                    raise asyncio.CancelledError
+        finally:
+            _AT_SPI_CANCEL_EVENT.reset(token)
+        self.assertFalse(ghostty.opened)
+        self.assertEqual(ghostty.toggles, 2)
+
+    async def test_existing_or_already_dismissed_dialog_is_not_toggled(self):
+        ghostty = FakeGhostty()
+        provider = GhosttyProvider()
+        ghostty.toggle()
+        with self.assertRaisesRegex(CommandError, "already has an open dialog"):
+            async with provider._palette_session(ghostty.context(), ghostty.top):
+                self.fail("an existing dialog was reused")
+        self.assertEqual(ghostty.toggles, 1)
+        ghostty.toggle()
+        async with provider._palette_session(ghostty.context(), ghostty.top):
+            ghostty.toggle()  # Simulate successful Enter or user dismissal.
+        self.assertEqual(ghostty.toggles, 4)
+        self.assertFalse(ghostty.opened)
+
+    async def test_first_surface_activation_closes_the_palette_without_reopening_it(self):
+        ghostty = FakeGhostty()
+        provider = GhosttyProvider()
+        context = ghostty.context()
+        fingerprint = PaletteFingerprint("Shell", "/work", 1, 0)
+
+        async def key(_context, _address, _palette, value):
+            if value == "RETURN":
+                ghostty.toggle()
+
+        with patch("everything.providers.ghostty.AtspiTree") as tree, patch.object(
+            provider, "_walk_rows", new=AsyncMock(return_value=[fingerprint])
+        ), patch.object(provider, "_send_verified_key", side_effect=key), patch.object(
+            provider, "_wait_selected", new=AsyncMock(return_value=object())
+        ), patch.object(provider, "_row_values", return_value=("Focus: Shell", "/work")):
+            tree.return_value.top_levels.return_value = [ghostty.top]
+            await provider._activate_surface({
+                "pid": 17, "control_address": "0xabc", "host_address": "0xabc",
+                "fingerprint": fingerprint.json(),
+            }, context)
+        self.assertFalse(ghostty.opened)
+        self.assertEqual(ghostty.toggles, 2)
+
+    async def test_revoked_permission_blocks_surface_activation(self):
+        ghostty = FakeGhostty()
+        with self.assertRaisesRegex(PaletteUnavailable, "disabled"):
+            async with GhosttyProvider()._palette_session(ghostty.context(allow=False), ghostty.top):
+                self.fail("revoked permission opened the palette")
+        self.assertEqual(ghostty.toggles, 0)
+        self.focus.assert_not_awaited()
+
+    async def test_scan_preserves_native_tabs_and_disables_a_failed_capability_until_process_replacement(self):
+        ghostty = FakeGhostty(accept_text=False)
+        provider = GhosttyProvider()
+        with patch("everything.providers.ghostty.AtspiTree") as tree, patch(
+            "everything.providers.ghostty.process_birth", return_value="birth-one"
+        ) as birth:
+            tree.return_value.top_levels.return_value = [ghostty.top]
+            tree.return_value.native_tabs.side_effect = lambda *_args, **_kw: ghostty.tabs
+            for _ in range(2):
+                result = await provider.scan(ghostty.context())
+                self.assertEqual([item.kind for item in result.items], ["terminal-tab"])
+                self.assertEqual(result.warnings, [])
+                self.assertEqual(ghostty.toggles, 2)
+            birth.return_value = "birth-two"
+            await provider.scan(ghostty.context())
+            self.assertEqual(ghostty.toggles, 4)
+
+    async def test_default_and_poll_scans_refresh_native_tabs_without_probing_or_focusing(self):
+        ghostty = FakeGhostty()
+        provider = GhosttyProvider()
+        with patch("everything.providers.ghostty.AtspiTree") as tree:
+            tree.return_value.top_levels.return_value = [ghostty.top]
+            tree.return_value.native_tabs.side_effect = lambda *_args, **_kw: ghostty.tabs
+            result = await provider.scan(ghostty.context(allow=False))
+            self.assertEqual([item.kind for item in result.items], ["terminal-tab"])
+            ghostty.tabs = []
+            result = await provider.scan(ghostty.context(allow=False, refresh=False))
+            self.assertEqual(result.items, [])
+            self.assertEqual(provider.native_tabs, {})
+        self.assertEqual(ghostty.toggles, 0)
+        self.focus.assert_not_awaited()
+
+    async def test_poll_retains_surfaces_until_permission_or_the_controlling_window_is_gone(self):
+        ghostty = FakeGhostty()
+        provider = GhosttyProvider()
+        with patch("everything.providers.ghostty.AtspiTree") as tree, patch.object(
+            provider, "_enumerate_palette", new=AsyncMock(return_value=[PaletteFingerprint("Shell", "/work", 1, 0)])
+        ) as probe:
+            tree.return_value.top_levels.return_value = [ghostty.top]
+            tree.return_value.native_tabs.return_value = []
+            initial = await provider.scan(ghostty.context())
+            self.assertEqual(len(initial.items), 1)
+            polled = await provider.scan(ghostty.context(refresh=False))
+            self.assertEqual(polled.items, initial.items)
+            probe.assert_awaited_once()
+            disabled = await provider.scan(ghostty.context(allow=False, refresh=False))
+            self.assertEqual(disabled.items, [])
+            self.assertEqual(disabled.metadata["surfaces"], [])
+            await provider.scan(ghostty.context())
+            closed_context = ghostty.context(refresh=False)
+            closed_context.hypr_clients = []
+            closed = await provider.scan(closed_context)
+            self.assertEqual(closed.items, [])
+            self.assertEqual(closed.metadata, {})
 
 
 class KittyIdentityTests(unittest.IsolatedAsyncioTestCase):

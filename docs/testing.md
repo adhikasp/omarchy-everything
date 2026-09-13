@@ -66,7 +66,11 @@ The suite performs:
   routing with unmapped matching evidence, and Herdr protocol-20 shape;
 - Ghostty effective-binding filtering, 9+ virtualized rows, duplicate
   fingerprint occurrences, fail-closed mutations, and exact-address paired
-  key-state construction;
+  key-state construction; unnamed deeply nested palette search fields, cleanup
+  through the opening action after failed detection/text writes/cancellation,
+  preservation of existing and already-dismissed dialogs, quiet capability
+  fallback per process birth, native-tab polling without focus or a modal,
+  and surface cache revocation;
 - Neovim's unique/ambiguous Herdr and multi-surface Ghostty routing;
 - QML lint and an offscreen Quickshell fixture that synchronously loads both
   entrypoints, verifies the chevron's painted horizontal center without
@@ -74,7 +78,11 @@ The suite performs:
   independent monitor leases, and covers right-click checklist routing, all
   supported checkbox rows, pointer and keyboard toggles, immediate filtering,
   persistence calls, cross-monitor settings injection, selection recovery,
-  mode switching, and results-only lease transitions. The fixture swaps only
+  mode switching, results-only lease transitions, default-off Ghostty opt-in,
+  cross-monitor permission updates, and pane-group gating. A public-only
+  manifest starts a recording helper from a path containing spaces, percent,
+  hash, and Unicode characters; its ready handshake and received scan options
+  are verified. The fixture uses a harmless transport helper and swaps
   compositor-dependent `KeyboardPanel` for an API-equivalent test double,
   because Qt's offscreen backend cannot instantiate a layer-shell
   `PanelWindow`;
@@ -169,7 +177,18 @@ single refresh followed by a visible stale notification.
   before its exact outer window is focused.
 - Ghostty 1.3.1: multiple processes/windows, 9+ tabs, horizontal and vertical
   splits, unselected tabs, identical title/cwd rows, and enough rows to force
-  palette virtualization.
+  palette virtualization. First leave Ghostty pane discovery off and confirm
+  opening Everything never opens a palette or changes Ghostty focus, while
+  windows and native tabs remain available. Enable the separate Ghostty option
+  with Terminal panes checked to exercise the palette cases. Disable Terminal
+  panes while leaving Terminal tabs checked and confirm the palette stops.
+  Repeat opt-in and group changes across monitors with results open.
+- On builds with unnamed deeply nested search fields or ineffective
+  EditableText writes, confirm the optional probe closes its palette and
+  quietly falls back to tabs/windows. Repeat a scan in the same helper lifetime
+  and confirm a failed capability is not probed again. Cancel a probe and
+  confirm cleanup runs. Leave a Ghostty dialog open before scanning and confirm
+  Everything does not modify it.
 - Mutate Ghostty surfaces mid-scan and mid-activation. Confirm fingerprint
   validation fails rather than selecting a neighbor.
 - Run a PTY key logger while exercising Ghostty discovery. Confirm no
@@ -207,7 +226,8 @@ single refresh followed by a visible stale notification.
   `everything-atspi-owner` thread and no `everything-atspi-events` thread while
   scans and activations continue, and still responds promptly to shutdown while
   a slow accessibility peer is present.
-- Open the panel and confirm Ghostty scans once and closes its palette. Leave
+- With Ghostty pane discovery explicitly enabled, open the panel and confirm
+  Ghostty scans once and closes its palette. Leave
   the panel open through several two-second polls and confirm socket/CLI
   updates merge without the modal reopening.
 - With a middle row highlighted, refresh an unchanged result set and confirm

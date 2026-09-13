@@ -25,6 +25,7 @@ class ScanContext:
     provider_metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
     providers: dict[str, Any] = field(default_factory=dict)
     include_ghostty: bool = False
+    allow_ghostty_palette: bool = False
 
     def clients_for_pid(self, pid: int) -> list[dict[str, Any]]:
         return [client for client in self.hypr_clients if int(client.get("pid") or 0) == int(pid)]

@@ -4,9 +4,12 @@ import asyncio
 import json
 import os
 import re
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import Any
 
+from ..atspi_runtime import atspi_cleanup
 from ..commands import CommandError
 from ..model import Thing, process_birth, stable_id
 from ..processes import canonical_path
@@ -31,6 +34,10 @@ from .hyprland import focus_address, lua_string
 
 FOCUS_PREFIX = "Focus:"
 GHOSTTY_131 = re.compile(r"(?<![0-9.])1\.3\.1(?![0-9.])")
+
+
+class PaletteUnavailable(CommandError):
+    """This process cannot safely expose surfaces through its palette."""
 
 
 @dataclass(slots=True, frozen=True)
@@ -163,14 +170,10 @@ class GhosttyProvider:
 
     def __init__(self) -> None:
         self.cached = ProviderResult(self.name)
-        self.has_scanned = False
+        self.palette_unavailable: set[tuple[int, str]] = set()
         self.native_tabs: dict[str, NativeTab] = {}
-        self.bindings: dict[str, list[EffectiveBinding]] = {}
 
     async def scan(self, context: ScanContext) -> ProviderResult:
-        if not context.include_ghostty and self.has_scanned:
-            return self.cached
-        self.has_scanned = True
         if not any(
             GHOSTTY_CLASS.search(
                 str(client.get("class") or client.get("initialClass") or "")
@@ -178,21 +181,9 @@ class GhosttyProvider:
             for client in context.hypr_clients
         ):
             self.cached = ProviderResult(self.name)
+            self.native_tabs = {}
+            self.palette_unavailable.clear()
             return self.cached
-        version = await context.runner.run(["ghostty", "+version"], timeout=1.0)
-        version_text = version.stdout + version.stderr
-        if version.returncode != 0:
-            self.cached = ProviderResult(self.name, warnings=["Ghostty command is unavailable"])
-            return self.cached
-        if not GHOSTTY_131.search(version_text):
-            self.cached = ProviderResult(
-                self.name,
-                warnings=["Ghostty palette integration requires the shipped 1.3.1 interface"],
-            )
-            return self.cached
-
-        keybind_result = await context.runner.run(["ghostty", "+list-keybinds", "--plain"], timeout=1.2)
-        self.bindings = parse_keybindings(keybind_result.stdout) if keybind_result.returncode == 0 else {}
         tree = AtspiTree()
         tops = [
             top
@@ -201,9 +192,9 @@ class GhosttyProvider:
         ]
         if not tops:
             self.cached = ProviderResult(self.name)
+            self.native_tabs = {}
             return self.cached
 
-        previous_address = await self._active_address(context)
         items: list[Thing] = []
         warnings: list[str] = []
         surfaces: list[dict[str, Any]] = []
@@ -253,11 +244,33 @@ class GhosttyProvider:
         for top in tops:
             pid = int(top.client.get("pid") or top.pid)
             by_pid.setdefault(pid, top)
+        live_processes = {(pid, process_birth(pid)) for pid in by_pid}
+        self.palette_unavailable.intersection_update(live_processes)
+
+        # Poll native tabs without opening a modal. Surface snapshots survive
+        # only while permission and their exact controlling process/window do.
+        if context.allow_ghostty_palette and not context.include_ghostty:
+            for item in self.cached.items:
+                activation = item.activation
+                client = context.client_by_address(str(activation.get("control_address") or ""))
+                if (item.kind == "terminal-pane" and client
+                        and (activation["pid"], activation["birth"]) in live_processes
+                        and int(client.get("pid") or 0) == activation["pid"]):
+                    items.append(item)
+            cached_ids = {item.id for item in items if item.kind == "terminal-pane"}
+            surfaces.extend(surface for surface in self.cached.metadata.get("surfaces", [])
+                            if surface["item_id"] in cached_ids)
         for pid, top in by_pid.items():
             address = normalized_address(top.client.get("address"))
             birth = process_birth(pid)
+            if (not context.allow_ghostty_palette or not context.include_ghostty
+                    or (pid, birth) in self.palette_unavailable):
+                continue
             try:
                 fingerprints = await self._enumerate_palette(context, top)
+            except PaletteUnavailable:
+                self.palette_unavailable.add((pid, birth))
+                continue
             except CommandError as error:
                 warnings.append(f"Ghostty {pid}: {error}")
                 continue
@@ -309,64 +322,71 @@ class GhosttyProvider:
                 )
 
         self.native_tabs = tab_objects
-        if previous_address:
-            try:
-                await focus_address(context, previous_address)
-            except CommandError:
-                pass
         self.cached = ProviderResult(self.name, items, warnings, {"surfaces": surfaces})
         return self.cached
 
     async def _enumerate_palette(self, context: ScanContext, top: TopLevel) -> list[PaletteFingerprint]:
         address = normalized_address(top.client.get("address"))
-        await focus_address(context, address)
-        await self._toggle_command_palette(context, top)
+        previous_address = await self._active_address(context)
         try:
-            palette = await self._wait_palette(top.application)
-            if not palette or not _set_text(palette.search, FOCUS_PREFIX):
-                raise CommandError("palette search is not EditableText")
-            await asyncio.sleep(0.06)
-            if _text_value(palette.search) != FOCUS_PREFIX:
-                raise CommandError("palette query could not be verified")
-            await self._send_verified_key(context, address, palette, "HOME")
-            fingerprints = await self._walk_rows(context, address, palette)
-            if not fingerprints:
-                raise CommandError("palette exposed no Focus: rows")
-            return fingerprints
+            async with self._palette_session(context, top) as palette:
+                await self._send_verified_key(context, address, palette, "HOME")
+                fingerprints = await self._walk_rows(context, address, palette)
+                if not fingerprints:
+                    raise PaletteUnavailable("palette exposed no Focus: rows")
+                return fingerprints
         finally:
-            await self._close_palette(context, address, top.application)
+            if previous_address:
+                with atspi_cleanup():
+                    try:
+                        await focus_address(context, previous_address)
+                    except CommandError:
+                        pass
 
-    async def _toggle_command_palette(self, context: ScanContext, top: TopLevel) -> None:
+    @staticmethod
+    def _command_palette_toggle(top: TopLevel) -> Callable[[], bool]:
         action_name = "win.toggle-command-palette"
         for node in walk(top.accessible):
             accessible = node.accessible
             if action_name in action_names(accessible):
-                if _do_exact_action(accessible, action_name):
-                    return
-                raise CommandError("win.toggle-command-palette refused activation")
+                return lambda: _do_exact_action(accessible, action_name)
             if _action_attribute(accessible, action_name):
-                if invoke_accessible(accessible):
-                    return
-                raise CommandError("win.toggle-command-palette is not actionable")
+                return lambda: invoke_accessible(accessible)
+        # A synthetic opening binding cannot be safely undone when the modal
+        # is unrecognizable. Require a reusable native action for both edges.
+        raise PaletteUnavailable("win.toggle-command-palette capability is unavailable")
 
-        # GTK does not guarantee that a window GAction name is exported as an
-        # AT-SPI action. The pinned release also exposes its action catalogue
-        # and effective accelerator, which provides a capability-checked,
-        # exact-address fallback without typing palette text into the PTY.
-        actions = await context.runner.run(["ghostty", "+list-actions"], timeout=1.0)
-        available = {line.strip().split(None, 1)[0] for line in actions.stdout.splitlines() if line.strip()}
-        if actions.returncode != 0 or "toggle_command_palette" not in available:
-            raise CommandError("win.toggle-command-palette capability is unavailable")
-        keybinds = await context.runner.run(["ghostty", "+list-keybinds", "--plain"], timeout=1.2)
-        bindings = parse_keybindings(keybinds.stdout) if keybinds.returncode == 0 else {}
-        choices = bindings.get("toggle_command_palette", [])
-        if not choices:
-            raise CommandError("win.toggle-command-palette has no safe effective binding")
-        await self._send_binding(
-            context,
-            normalized_address(top.client.get("address")),
-            choices[0],
-        )
+    @asynccontextmanager
+    async def _palette_session(self, context: ScanContext, top: TopLevel) -> AsyncIterator[PaletteState]:
+        if not context.allow_ghostty_palette:
+            raise PaletteUnavailable("Ghostty pane discovery is disabled")
+        version = await context.runner.run(["ghostty", "+version"], timeout=1.0)
+        if version.returncode != 0 or not GHOSTTY_131.search(version.stdout + version.stderr):
+            raise PaletteUnavailable("Ghostty palette requires the shipped 1.3.1 interface")
+        if self._modal_markers(top.application):
+            raise CommandError("Ghostty already has an open dialog")
+        toggle = self._command_palette_toggle(top)
+        address = normalized_address(top.client.get("address"))
+        await focus_address(context, address)
+        palette = None
+        attempted = True
+        try:
+            if not toggle():
+                attempted = False
+                raise PaletteUnavailable("win.toggle-command-palette refused activation")
+            palette = await self._wait_palette(top.application)
+            if not palette or not _set_text(palette.search, FOCUS_PREFIX):
+                raise PaletteUnavailable("palette search is not EditableText")
+            await asyncio.sleep(0.06)
+            if _text_value(palette.search) != FOCUS_PREFIX:
+                raise PaletteUnavailable("palette query could not be verified")
+            yield palette
+        finally:
+            # The native cancellation flag must not prevent undoing the action
+            # this operation issued. Cleanup stays on the AT-SPI owner thread.
+            with atspi_cleanup():
+                if attempted:
+                    await self._close_palette(top.application, toggle, palette)
 
     async def _walk_rows(
         self, context: ScanContext, address: str, palette: PaletteState
@@ -399,12 +419,9 @@ class GhosttyProvider:
         palette: PaletteState,
         key: str,
         mods: str = "",
-        require_focus_filter: bool = True,
     ) -> None:
         current = self._find_palette(palette.application)
-        if not current or (
-            require_focus_filter and _text_value(current.search) != FOCUS_PREFIX
-        ) or (
+        if not current or _text_value(current.search) != FOCUS_PREFIX or (
             palette.identity and current.identity != palette.identity
         ):
             raise CommandError("Ghostty palette disappeared before synthetic navigation")
@@ -426,26 +443,33 @@ class GhosttyProvider:
         await asyncio.sleep(0.035)
 
     async def _close_palette(
-        self, context: ScanContext, address: str, application: Any
+        self, application: Any, toggle: Callable[[], bool], opened: PaletteState | None
     ) -> None:
         palette = self._find_palette(application)
-        if not palette:
+        if not palette and opened and opened.identity not in self._modal_markers(application):
+            # Enter (or the user) already dismissed the known dialog. Toggling
+            # here would reopen it. A failed initial detection has no such
+            # evidence: undo the opening through its exact native action.
             return
-        # Cleanup is not list navigation: it is permitted before Focus: was
-        # installed, but only while the modal's live EditableText and list are
-        # still proven present. The key remains targeted to the exact window.
-        await self._send_verified_key(
-            context,
-            address,
-            palette,
-            "ESCAPE",
-            require_focus_filter=False,
-        )
+        if not toggle():
+            raise CommandError("Ghostty command palette refused cleanup")
         for _attempt in range(16):
-            if not self._find_palette(application):
+            if not self._modal_markers(application):
                 return
             await asyncio.sleep(0.025)
         raise CommandError("Ghostty command palette could not be closed safely")
+
+    @staticmethod
+    def _modal_markers(application: Any) -> set[str]:
+        if Atspi is None:
+            return set()
+        return {
+            GhosttyProvider._accessible_marker(node.accessible)
+            for node in walk(application, max_nodes=5000, max_depth=40)
+            if not has_state(node.accessible, Atspi.StateType.DEFUNCT)
+            and (node.role_value in (Atspi.Role.DIALOG, Atspi.Role.ALERT)
+                 or has_state(node.accessible, Atspi.StateType.MODAL))
+        }
 
     async def _send_binding(
         self, context: ScanContext, address: str, binding: EffectiveBinding
@@ -484,18 +508,20 @@ class GhosttyProvider:
         if Atspi is None:
             return None
         searches: list[Any] = []
-        for node in walk(application, max_nodes=5000):
+        for node in walk(application, max_nodes=5000, max_depth=40):
             accessible = node.accessible
             if safe_call(None, accessible.get_editable_text_iface) is not None:
                 name = clean_text(safe_call("", accessible.get_name))
                 description = clean_text(safe_call("", accessible.get_description))
-                if "command" in (name + " " + description).lower() or _text_value(accessible).startswith(FOCUS_PREFIX):
+                if (not name and not description
+                        or "command" in (name + " " + description).lower()
+                        or _text_value(accessible).startswith(FOCUS_PREFIX)):
                     searches.append(accessible)
         candidates: list[tuple[int, Any, Any, Any]] = []
         for search in searches:
             cursor = search
             seen: set[str] = set()
-            for depth in range(12):
+            for depth in range(32):
                 cursor = safe_call(None, cursor.get_parent)
                 if not cursor:
                     break
@@ -527,7 +553,7 @@ class GhosttyProvider:
                     list_candidates.sort(key=lambda value: value[0], reverse=True)
                     candidates.append((depth, search, list_candidates[0][1], cursor))
                     break
-        if not candidates:
+        if len(candidates) != 1:
             return None
         candidates.sort(key=lambda value: value[0])
         _depth, search, list_view, container = candidates[0]
@@ -683,14 +709,8 @@ class GhosttyProvider:
         if not top:
             raise CommandError("Ghostty control window is ambiguous")
         address = normalized_address(top.client.get("address"))
-        await focus_address(context, address)
-        await self._toggle_command_palette(context, top)
         presented = False
-        try:
-            palette = await self._wait_palette(top.application)
-            if not palette or not _set_text(palette.search, FOCUS_PREFIX):
-                raise CommandError("Ghostty palette could not be prepared")
-            await asyncio.sleep(0.06)
+        async with self._palette_session(context, top) as palette:
             await self._send_verified_key(context, address, palette, "HOME")
             rows = await self._walk_rows(context, address, palette)
             expected_value = activation.get("fingerprint")
@@ -698,7 +718,7 @@ class GhosttyProvider:
                 clean_text(expected_value.get("title")) if isinstance(expected_value, dict) else "",
                 canonical_path(str(expected_value.get("cwd") or "")) if isinstance(expected_value, dict) else "",
                 int(expected_value.get("occurrence") or 0) if isinstance(expected_value, dict) else 0,
-                int(expected_value.get("ordinal") or -1) if isinstance(expected_value, dict) else -1,
+                int(expected_value.get("ordinal", -1)) if isinstance(expected_value, dict) else -1,
             )
             if expected.ordinal < 0 or expected.ordinal >= len(rows) or rows[expected.ordinal] != expected:
                 raise CommandError("Ghostty surface fingerprint changed")
@@ -724,10 +744,6 @@ class GhosttyProvider:
                 await asyncio.sleep(0.025)
             if not presented:
                 raise CommandError("Ghostty surface action did not close its palette")
-        finally:
-            if not presented:
-                await self._close_palette(context, address, top.application)
-
         host_address = normalized_address(activation.get("host_address"))
         client = context.client_by_address(host_address) if host_address else None
         if not client or int(client.get("pid") or 0) != pid:

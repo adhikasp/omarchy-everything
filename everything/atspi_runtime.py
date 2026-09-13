@@ -7,8 +7,9 @@ import select
 import signal
 import sys
 import threading
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
 from concurrent.futures import Future
+from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from typing import Protocol, TypeVar
@@ -29,6 +30,17 @@ def atspi_cancel_checkpoint() -> None:
     event = _AT_SPI_CANCEL_EVENT.get()
     if event is not None and event.is_set():
         raise asyncio.CancelledError
+
+
+@contextmanager
+def atspi_cleanup() -> Iterator[None]:
+    """Allow owner-thread modal cleanup after the operation was cancelled."""
+
+    token = _AT_SPI_CANCEL_EVENT.set(None)
+    try:
+        yield
+    finally:
+        _AT_SPI_CANCEL_EVENT.reset(token)
 
 
 class AtspiExecutor:

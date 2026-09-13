@@ -21,9 +21,14 @@ hl.unbind("SUPER + SLASH")
 o.bind("SUPER + SLASH", "Everything", "omarchy-shell shell toggle b.everything")
 ```
 
-# Configure
+## Configure
 
 Right-click the bar icon to choose which groups appear in Everything.
+
+### Ghostty Panes
+
+Ghostty windows and tabs are available by default, but Ghostty pane discovery must be enabled manually, as it has wonky behavior where it opens Ghostty's command
+palette.
 
 ## Update
 

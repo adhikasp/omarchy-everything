@@ -509,13 +509,13 @@ assert.match(qml,
   /var nextItems = Model\.rank\([\s\S]*everythingService\.hiddenIds[\s\S]*disabledKinds\)/,
   "persistent group visibility participates in every ranked rebuild")
 assert.match(qml,
-  /function persistDisabledKinds[\s\S]*entry\.disabledKinds = nextKinds[\s\S]*root\.settings = entry[\s\S]*updateEntryInline\(root\.moduleName, entry\)/,
+  /function persistDisabledKinds[\s\S]*persistSetting\("disabledKinds", nextKinds\)[\s\S]*root\.settings = entry[\s\S]*updateEntryInline\(root\.moduleName, entry\)/,
   "group changes apply optimistically before shell.json persistence and monitor synchronization")
 assert.match(qml,
   /readonly property bool resultsModeOpen:\s*root\.opened && popupMode === resultsMode/,
   "helper leases distinguish results visibility from checklist visibility")
 assert.match(qml,
-  /onResultsModeOpenChanged:[\s\S]*if \(resultsModeOpen\) everythingService\.acquire\(instanceKey\)[\s\S]*else everythingService\.release\(instanceKey\)/,
+  /onResultsModeOpenChanged:[\s\S]*if \(resultsModeOpen\) everythingService\.acquire\(instanceKey, ghosttyPaletteRequested\)[\s\S]*else everythingService\.release\(instanceKey\)/,
   "switching popup modes acquires and releases the results-only helper lease")
 assert.match(qml, /PointerMoveGate\s*\{[\s\S]*?referenceItem:\s*resultList[\s\S]*?\}/,
   "row pointer selection uses the shell movement gate")
@@ -551,7 +551,7 @@ const groupDelegateStart = qml.indexOf("\n        delegate: Item", groupListStar
 const groupListHandler = qml.slice(groupListStart, groupDelegateStart)
 const groupDelegateHandler = qml.slice(groupDelegateStart)
 assert.match(groupListHandler,
-  /model:\s*root\.supportedGroups[\s\S]*Accessible\.role:\s*Accessible\.List/,
+  /model:\s*root\.checklistEntries[\s\S]*Accessible\.role:\s*Accessible\.List/,
   "the group panel renders the complete canonical catalog as an accessible list")
 assert.doesNotMatch(groupListHandler, /Keys\.onPressed/,
   "the checklist leaves Tab and standard movement to the shell key catcher")
@@ -559,7 +559,7 @@ assert.match(groupDelegateHandler,
   /Accessible\.role:\s*Accessible\.CheckBox[\s\S]*Accessible\.checkable:\s*true[\s\S]*Accessible\.checked:\s*checked[\s\S]*Accessible\.onToggleAction:/,
   "every group row exposes checkbox accessibility semantics")
 assert.match(groupDelegateHandler,
-  /function activate\(\)[\s\S]*setGroupChecklistIndex\(index\)[\s\S]*toggleKindVisibility\(modelData\.kind\)[\s\S]*MouseArea[\s\S]*onClicked:\s*groupRow\.activate\(\)/,
+  /function activate\(\)[\s\S]*setGroupChecklistIndex\(index\)[\s\S]*toggleChecklistEntry\(modelData\)[\s\S]*MouseArea[\s\S]*onClicked:\s*groupRow\.activate\(\)/,
   "pointer input selects and toggles the same checklist row")
 assert.match(qml, /import QtQuick\.Effects/,
   "the window image fallback can use the shell-compatible color effect")

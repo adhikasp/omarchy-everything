@@ -1,7 +1,9 @@
 # JSON-lines protocol
 
 `Service.qml` starts `helper/everything_helper.py --json-lines` as an argv
-array. UTF-8 JSON objects travel one per line over stdin/stdout. Protocol and
+array. Its path comes from the service component's own resolved file URL,
+decoded into a local path; a public-only manifest is sufficient to start it.
+UTF-8 JSON objects travel one per line over stdin/stdout. Protocol and
 plugin versions are independent: every message has `version: 1`, while the
 initial handshake reports plugin version `0.0.1`.
 
@@ -17,11 +19,19 @@ nonfatal; the helper continues accepting lines.
 
 ## Requests
 
-Scan, optionally including the one-shot Ghostty palette probe:
+Scan, optionally permitting and requesting the one-shot Ghostty palette probe:
 
 ```json
-{"version":1,"id":"scan-7","type":"scan","options":{"ghostty":true}}
+{"version":1,"id":"scan-7","type":"scan","options":{"ghostty":true,"ghosttyPalette":true}}
 ```
+
+Both options require literal JSON `true`; omitted or malformed values are
+false. `ghosttyPalette` permits the visible modal bridge and retention of its
+cached surfaces. `ghostty` requests a fresh palette probe in this scan and has
+no effect without that permission. Normal polling sends `ghostty: false` with
+the current permission, so native tabs refresh while permitted surface rows
+remain cached. Revocation clears those rows and their routing metadata. Ghostty
+native tabs and managed windows remain eligible with both options false.
 
 Activate a public item using its process-local opaque token:
 
@@ -119,7 +129,12 @@ before replacing its list model. An identical sequence is a no-op.
 Each bar instance owns a unique in-memory results lease. Opening or switching
 to results acquires it; closing results or switching to the shell-only group
 checklist releases it. A checklist-only popup therefore sends no helper
-message. The first results lease starts the helper, and release of the last one
+message. Leases carry the effective palette opt-in (the preference is exactly
+true and `terminal-pane` is enabled); any active requesting lease permits the
+bridge. Changes to a live lease trigger a new scan, cancelling an obsolete
+probe when the last permission is revoked. Opening and helper restart scans
+request the bridge only when permitted. The first results lease starts the
+helper, and release of the last one
 requests shutdown unless an activation is pending. The panel closes before
 `Qt.callLater` sends activation, releasing the layer-shell keyboard grab before
 another surface receives focus. A helper restart clears queued tokens because

@@ -1,13 +1,47 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import subprocess
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import AsyncMock, Mock, call, patch
+
+from everything.server import JsonLineServer
 
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+class ScanOptionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_palette_permission_requires_literal_true_at_the_wire_boundary(self):
+        requests = [
+            {"ghostty": True, "ghosttyPalette": True},
+            {"ghostty": False, "ghosttyPalette": True},
+            {"ghostty": True},
+            {"ghostty": "true", "ghosttyPalette": "false"},
+            {"ghostty": 1, "ghosttyPalette": 1},
+            [],
+        ]
+        lines = [json.dumps({"version": 1, "id": str(index), "type": "scan", "options": options})
+                 for index, options in enumerate(requests)]
+
+        async def connect(factory, _stream):
+            protocol = factory()
+            protocol.data_received(("\n".join(lines) + "\n").encode())
+            protocol.eof_received()
+            return Mock(), protocol
+
+        server = JsonLineServer("unused", test_mode=True)
+        server._start_scan = AsyncMock()
+        loop = asyncio.get_running_loop()
+        with patch.object(loop, "connect_read_pipe", side_effect=connect):
+            await server._read_loop(asyncio.Event())
+        self.assertEqual(server._start_scan.await_args_list, [
+            call("0", True, True), call("1", False, True), call("2", True, False),
+            call("3", False, False), call("4", False, False), call("5", False, False),
+        ])
 
 
 class ProtocolTests(unittest.TestCase):

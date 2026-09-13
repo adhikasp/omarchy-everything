@@ -22,7 +22,7 @@ The helper may execute only these command families:
   targeted `hl.dsp.send_key_state` cases documented below.
 - `kitten @ --to unix:<validated-socket> ls`, `focus-tab --match id:<number>`,
   and `focus-window --match id:<number>`.
-- `ghostty +version`, `ghostty +list-actions`, and
+- `ghostty +version` and
   `ghostty +list-keybinds --plain` while a Ghostty client is actually managed.
 - `tmux -S <validated-socket> list-sessions`, `list-windows -a`,
   `list-panes -a`, `list-clients`, and `switch-client`; or a new local
@@ -139,7 +139,10 @@ is accepted, and D-Bus activation never starts an application.
 
 ## Ghostty palette and synthetic keys
 
-Ghostty's 1.3.1 command palette is a modal, capability-tested bridge. The
+Ghostty's 1.3.1 command palette is an opt-in, capability-tested bridge. It
+requires a literal-true shell setting and an enabled Terminal panes group.
+Discovery and cleanup use the same native `win.toggle-command-palette` action;
+there is no synthetic opening shortcut. A pre-existing modal is left alone. The
 filter `Focus:` is written through AT-SPI `EditableText`; query text is never
 typed into a PTY. The command input and populated list must be descendants of
 the same live AT-SPI dialog/alert; application-wide lookalikes are rejected.
@@ -149,16 +152,14 @@ Palette navigation sends exact-address current Hyprland Lua dispatches of
 
 - `HOME` to reset to the first filtered row;
 - `DOWN` to walk or select a verified row;
-- `RETURN` only after the complete target fingerprint is revalidated;
-- `ESCAPE` only during cleanup while the verified palette remains open.
+- `RETURN` only after the complete target fingerprint is revalidated.
 
 Before every navigation/activation pair, Everything proves that the palette
-still exists and its EditableText value is exactly `Focus:`. Cleanup Escape is
-allowed before the filter is installed only while the live modal search and
-list are still proven present. A key is never allowed to continue if the modal
+still exists and its EditableText value is exactly `Focus:`. A key is never
+allowed to continue if the modal
 disappeared, so navigation cannot fall through to the PTY. Legacy
 `sendshortcut` is not used. Successful Enter is also verified to have closed
-the palette; otherwise cleanup Escape closes it and activation fails closed.
+the palette; otherwise the native toggle closes it and activation fails closed.
 
 Standalone tab selection can send one effective Ghostty binding read from
 `+list-keybinds --plain` for `goto_tab`, `last_tab`, or `next_tab`. Global,
@@ -166,7 +167,16 @@ all-window, unconsumed, unknown-modifier, and sequence bindings are rejected;
 the exact target address and selected AT-SPI tab are verified around every
 step.
 
-The palette is always closed in cleanup. Its surface fingerprint contains
+Cleanup retains the exact native opening action before invoking it. If the
+search or list cannot be recognized, that action still undoes the opening.
+When a known modal has already disappeared, cleanup does not toggle it back
+open. Native cancellation checkpoints are temporarily masked only in cleanup
+on the same AT-SPI owner thread so cancellation cannot skip the closing action
+or focus restoration. Async cleanup settling and owner shutdown remain bounded.
+No Escape is sent to an unrecognized modal or a terminal.
+
+The palette is closed in cleanup; refusal is reported as a nonfatal warning.
+Its surface fingerprint contains
 process birth, exact title, canonical cwd, duplicate occurrence, and filtered
 ordinal, and is rebuilt before activation.
 
@@ -174,8 +184,10 @@ ordinal, and is rebuilt before activation.
 
 There is no runtime database or cache file. Provider snapshots, opaque-token
 secrets, helper warnings, monitor leases, Ghostty scan cache, and hidden IDs
-exist only in memory. Plugin or shell reload resets them. The sole persistent
-Everything-owned preference is the normalized `disabledKinds` string array in
-the widget's existing `shell.json` entry. QML writes it through the shell's
-`updateEntryInline` API; it contains only supported public kind identifiers and
+exist only in memory, including unsupported palette capability results keyed
+by process birth. Plugin or shell reload resets them. The persistent
+Everything-owned preferences are the normalized `disabledKinds` string array
+and explicit `ghosttyPalette` boolean in the widget's existing `shell.json`
+entry. QML writes them through the shell's `updateEntryInline` API; they contain
+only supported public kind identifiers and the opt-in boolean, and
 never discovered thing data, native identities, titles, paths, or tokens.

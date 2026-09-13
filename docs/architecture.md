@@ -71,11 +71,21 @@ new catalog group is enabled until explicitly disabled. This persistent filter
 is independent of per-opening group collapse and the service's transient
 per-thing hidden IDs.
 
+The checklist also owns an explicit `ghosttyPalette: boolean` preference,
+disabled unless its value is exactly `true`. It describes the visible palette
+side effect and requests pane discovery only while `terminal-pane` is enabled.
+This setting uses the same shell persistence and monitor injection path as
+group visibility; it is independent of the canonical thing-kind catalog.
+
 `Service.qml` is shell-wide. It owns helper leases, request correlation,
 provider partials, activation-token lookup, transient hidden IDs, polling, and
 helper restart/stop behavior. A bar instance acquires its stable lease while
 its results mode is open and releases it when results close or switch to the
-checklist.
+checklist. Each lease carries that monitor's effective Ghostty palette opt-in;
+the service combines active requests and revokes permission when none remains.
+The helper path is resolved relative to `Service.qml` with `Qt.resolvedUrl`,
+then URL-decoded for argv. It does not depend on private manifest fields,
+which Quattro removes from third-party service manifests.
 
 `EverythingModel.js` stays pure and free of QML object references. Source
 metadata may change without replacing the visible list. A UI update is needed
@@ -135,8 +145,12 @@ container routing.
 Hyprland results are published first. Independent adapters then scan
 concurrently. Neovim receives a cheap second scan after container metadata is
 available so it can route through an exact host without guessing. Ghostty's
-modal bridge runs only during a panel-opening scan or activation revalidation,
-never on the normal poll. The panel exposes no manual scan control.
+native tabs refresh without opening or focusing a window. Its modal bridge
+requires explicit opt-in and runs only during a panel-opening scan or surface
+activation revalidation, never on the normal poll or native-tab activation
+refresh. Polls retain cached surfaces only while permission and the controlling
+process/window remain valid. Revoking permission drops surface rows and routing
+metadata on the next correlated scan. The panel exposes no manual scan control.
 The shared routing client set contains only mapped Hyprland clients. A separate
 matching-only view retains current unmapped records so a lingering toolkit top
 level binds to its closed, non-routable former parent instead of being assigned
@@ -214,8 +228,9 @@ activation identities.
 - Hyprland rows can arrive before slower adapters; `Service.qml` merges
   provider partials rather than replacing unrelated providers.
 - Hidden IDs, warnings, provider snapshots, tokens, and Ghostty cache are
-  memory-only and reset with the plugin or shell process. Disabled kinds are
-  instead shell-owned widget settings and survive plugin and shell restarts.
+  memory-only and reset with the plugin or shell process. Disabled kinds and
+  the Ghostty palette opt-in are instead shell-owned widget settings and
+  survive plugin and shell restarts.
 - The panel closes before activation is dispatched so the shell releases its
   keyboard grab before another local surface receives focus.
 

@@ -146,23 +146,39 @@ Ghostty 1.3.1; it is not presented as a public Ghostty IPC API.
 [Ghostty's pinned 1.3.1 source](https://github.com/ghostty-org/ghostty/tree/v1.3.1/src)
 is the compatibility boundary.
 
-On each panel opening, Everything:
+The palette bridge is off by default. The user must enable both the separate
+Ghostty pane-discovery option and the Terminal panes group. Native tabs refresh
+on every scan without opening a palette or changing focus, including on builds
+without the palette capability. With the bridge enabled, a panel opening:
 
 1. Verifies the running class and exact `ghostty +version` output.
-2. Capability-probes `toggle_command_palette` with `ghostty +list-actions`
-   and reads effective bindings with `ghostty +list-keybinds --plain`.
-3. Requires the `win.toggle-command-palette` capability, opens the palette,
+2. Requires a reusable native `win.toggle-command-palette` action. An effective
+   keyboard shortcut alone is insufficient because it cannot safely undo an
+   opening when modal detection fails. An already-open dialog is left alone.
+3. Opens the palette through that native action,
    requires the command `EditableText` and populated list to share the same
    live modal, and sets `Focus:` through `EditableText` (never injected typing).
+   Unnamed GTK entries are accepted structurally, including search controls
+   more than twelve ancestors below the modal; ambiguous candidates fail closed.
 4. Walks the complete virtualized result list with verified, exact-address
-   navigation and always closes the dialog during cleanup.
+   navigation and closes the dialog through the same native toggle in cleanup,
+   including when search detection, text verification, or cancellation fails.
 5. Stores process birth, title, canonical cwd, duplicate occurrence, and
    filtered ordinal as the surface fingerprint.
 
 Activation opens the palette again, rebuilds the entire ordered fingerprint,
 and verifies each navigation step before Enter. Ghostty's own
 `surface.present()` then selects the proper window, tab, and split. A changed
-or ambiguous fingerprint fails closed.
+or ambiguous fingerprint fails closed. Cleanup does not toggle a previously
+identified dialog that Enter or the user already dismissed.
+
+A missing capability or failed `EditableText` readback quietly omits surfaces
+for that process birth for the rest of the helper lifetime. It never repeats
+the failed probe on each poll or adds a warning per scan; native tabs and the
+outer windows remain available. Cleanup refusal remains a nonfatal warning.
+Permitted polls retain cached surfaces while their controlling process/window
+remains live. Revoking permission removes surface rows and routing metadata;
+native-tab activation refreshes never request the palette.
 
 Standalone native tabs use only the running configuration's effective
 `goto_tab`, `last_tab`, or `next_tab` binding, with AT-SPI verification before

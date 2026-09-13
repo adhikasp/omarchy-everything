@@ -31,12 +31,21 @@ cp -a -- "$OMARCHY_SOURCE/shell/Ui" "$RUNTIME_TMP/config/Ui"
 cp -- "$ROOT_DIR/tests/fixtures/qml-entrypoints/KeyboardPanel.qml" \
   "$RUNTIME_TMP/config/Ui/KeyboardPanel.qml"
 
+# Exercise QML-relative, decoded helper paths with a public-only manifest.
+# The helper is a transport fixture so opening results never probes live apps.
+PLUGIN_TMP="$RUNTIME_TMP/plugin space # % café"
+mkdir -p -- "$PLUGIN_TMP/helper"
+cp -- "$ROOT_DIR/Service.qml" "$ROOT_DIR/Everything.qml" \
+  "$ROOT_DIR/EverythingModel.js" "$PLUGIN_TMP/"
+cp -- "$ROOT_DIR/tests/fixtures/qml-entrypoints/everything_helper.py" "$PLUGIN_TMP/helper/"
+
 env \
   QT_QPA_PLATFORM=offscreen \
   XDG_RUNTIME_DIR="$RUNTIME_TMP/runtime" \
   HOME="$RUNTIME_TMP/home" \
   OMARCHY_PATH="$OMARCHY_SOURCE" \
-  EVERYTHING_SOURCE_DIR="$ROOT_DIR" \
+  EVERYTHING_SOURCE_DIR="$PLUGIN_TMP" \
+  EVERYTHING_REQUEST_LOG="$RUNTIME_TMP/requests.jsonl" \
   QML2_IMPORT_PATH="$OMARCHY_SOURCE/shell${QML2_IMPORT_PATH:+:$QML2_IMPORT_PATH}" \
   QML_IMPORT_PATH="$OMARCHY_SOURCE/shell${QML_IMPORT_PATH:+:$QML_IMPORT_PATH}" \
   timeout 20 quickshell -p "$RUNTIME_TMP/config" --no-color >"$RUNTIME_TMP/quickshell.log" 2>&1
@@ -55,5 +64,17 @@ if grep -Fq 'EVERYTHING_LOAD_ERROR' "$RUNTIME_TMP/quickshell.log" \
   sed -n '1,260p' "$RUNTIME_TMP/quickshell.log" >&2
   exit 1
 fi
+
+python - "$RUNTIME_TMP/requests.jsonl" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as stream:
+    scans = [value for line in stream if (value := json.loads(line))["type"] == "scan"]
+assert scans, "the helper never received a scan"
+assert scans[0]["options"] == {"ghostty": False, "ghosttyPalette": False}
+assert any(scan["options"] == {"ghostty": True, "ghosttyPalette": True} for scan in scans)
+assert any(scan["options"] == {"ghostty": False, "ghosttyPalette": True} for scan in scans)
+PY
 
 echo "qml.test.sh: entrypoints loaded"

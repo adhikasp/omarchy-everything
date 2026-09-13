@@ -37,6 +37,7 @@ class DiscoveryManager:
         self.metadata: dict[str, dict[str, Any]] = {}
         self.warnings: dict[str, list[str]] = {}
         self.test_mode = test_mode
+        self.allow_ghostty_palette = False
         self.providers: dict[str, Any] = {}
         self.atspi_executor: AtspiExecutor | None = None
         if not test_mode:
@@ -83,9 +84,13 @@ class DiscoveryManager:
             provider_metadata=self.metadata,
             providers=self.providers,
             include_ghostty=include_ghostty,
+            allow_ghostty_palette=self.allow_ghostty_palette,
         )
 
-    async def scan(self, request_id: str, *, include_ghostty: bool) -> None:
+    async def scan(
+        self, request_id: str, *, include_ghostty: bool, allow_ghostty_palette: bool = False
+    ) -> None:
+        self.allow_ghostty_palette = allow_ghostty_palette
         if self.test_mode:
             await self.emit(
                 {
@@ -112,9 +117,7 @@ class DiscoveryManager:
             await self._emit_full(request_id)
             return
 
-        provider_names = ["atspi", "kitty", "tmux", "herdr", "neovim"]
-        if include_ghostty and "ghostty" in self.providers:
-            provider_names.append("ghostty")
+        provider_names = ["atspi", "kitty", "tmux", "herdr", "neovim", "ghostty"]
         provider_names = [name for name in provider_names if name in self.providers]
 
         async def run_provider(name: str) -> tuple[str, ProviderResult | None, Exception | None]:
@@ -238,7 +241,10 @@ class DiscoveryManager:
             await self._activation_response(request_id, item_id, False, True, "Thing provider is unavailable")
             return
 
-        context = self.context(include_ghostty=provider_name == "ghostty")
+        context = self.context(
+            include_ghostty=provider_name == "ghostty"
+            and reference.get("activation", {}).get("target") == "surface"
+        )
         try:
             # Refresh exact managed clients without publishing a new Hyprland
             # generation, otherwise merely checking liveness would stale the
@@ -283,7 +289,6 @@ class DiscoveryManager:
         self, provider_name: str, item_id: str, context: ScanContext
     ) -> Any:
         context.processes = ProcTable.read()
-        context.include_ghostty = provider_name == "ghostty"
         try:
             result = await self._scan_provider(provider_name, context)
         except Exception:

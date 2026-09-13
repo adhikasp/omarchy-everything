@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import threading
 import unittest
+from unittest.mock import AsyncMock
 
 from everything.atspi_runtime import AtspiExecutor
 from everything.discovery import DiscoveryManager
@@ -75,6 +76,38 @@ class RecordingNativeProvider:
 
 
 class DiscoveryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_ghostty_native_scans_run_without_palette_permission_and_on_polls(self):
+        manager = DiscoveryManager(AsyncMock(), atspi_available=False)
+        observed = []
+
+        class GhosttyScan:
+            async def scan(self, context):
+                observed.append((context.include_ghostty, context.allow_ghostty_palette))
+                return ProviderResult("ghostty")
+
+        manager.providers = {"hyprland": StaticProvider("hyprland"), "ghostty": GhosttyScan()}
+        await manager.scan("default", include_ghostty=False)
+        await manager.scan("opt-in", include_ghostty=True, allow_ghostty_palette=True)
+        await manager.scan("poll", include_ghostty=False, allow_ghostty_palette=True)
+        await manager.scan("revoked", include_ghostty=False)
+        self.assertEqual(observed, [(False, False), (True, True), (False, True), (False, False)])
+
+    async def test_stale_ghostty_tab_activation_does_not_probe_the_palette(self):
+        emit = AsyncMock()
+        manager = DiscoveryManager(emit, atspi_available=False)
+        manager.allow_ghostty_palette = True
+        row = thing("ghostty", "tab")
+        row.activation = {"target": "tab"}
+        provider = StaticProvider("ghostty", ProviderResult("ghostty", [row]))
+        provider.scan = AsyncMock(return_value=provider.result)
+        provider.activate = AsyncMock()
+        manager.providers = {"ghostty": provider}
+        published = manager.registry.publish("ghostty", [row])
+        manager.registry.publish("ghostty", [row])
+        await manager.activate("activate", row.id, published[0]["activationToken"])
+        self.assertFalse(provider.scan.await_args.args[0].include_ghostty)
+        self.assertTrue(emit.await_args.args[0]["ok"])
+
     async def test_partial_results_and_failures_are_isolated(self) -> None:
         messages: list[dict] = []
 

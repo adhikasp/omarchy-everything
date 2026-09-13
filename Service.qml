@@ -30,34 +30,41 @@ Item {
   property int crashCount: 0
   property var requestQueue: []
 
-  readonly property string sourceDir: manifest && manifest.__sourceDir
-    ? String(manifest.__sourceDir) : ""
-  readonly property string helperPath: sourceDir ? sourceDir + "/helper/everything_helper.py" : ""
+  // Quattro sanitizes third-party manifests. Resolve co-located code from
+  // this component, decoding the file URL before passing it as an argv path.
+  readonly property string helperPath: decodeURIComponent(
+    String(Qt.resolvedUrl("helper/everything_helper.py")).replace(/^file:\/\//, ""))
+  readonly property bool ghosttyPaletteEnabled: Object.keys(leases).some(function(key) {
+    return leases[key] === true
+  })
 
   function nextRequestId(prefix) {
     requestSerial += 1
     return String(prefix || "request") + "-" + requestSerial
   }
 
-  function acquire(ownerKey) {
+  function acquire(ownerKey, ghosttyPalette) {
     var key = String(ownerKey || "panel")
-    if (leases[key] === true) return
+    var enabled = ghosttyPalette === true
+    if (leases[key] === enabled) return
     var next = {}
     for (var existing in leases) next[existing] = leases[existing]
-    next[key] = true
+    next[key] = enabled
     leases = next
     leaseCount = Object.keys(next).length
     ensureHelper()
-    requestScan(true)
+    requestScan(enabled)
   }
 
   function release(ownerKey) {
     var key = String(ownerKey || "panel")
-    if (leases[key] !== true) return
+    if (leases[key] === undefined) return
+    var hadPalette = ghosttyPaletteEnabled
     var next = {}
     for (var existing in leases) if (existing !== key) next[existing] = leases[existing]
     leases = next
     leaseCount = Object.keys(next).length
+    if (hadPalette && !ghosttyPaletteEnabled && leaseCount > 0) requestScan(false)
     maybeStopTimer.restart()
   }
 
@@ -74,7 +81,10 @@ Item {
       version: 1,
       id: requestId,
       type: "scan",
-      options: { ghostty: includeGhostty === true }
+      options: {
+        ghostty: includeGhostty === true && ghosttyPaletteEnabled,
+        ghosttyPalette: ghosttyPaletteEnabled
+      }
     })
   }
 
