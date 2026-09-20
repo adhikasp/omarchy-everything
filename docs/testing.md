@@ -63,12 +63,19 @@ The suite performs:
   native-identity checks without unrelated branch traversal, multi-window
   ambiguity, and exclusion of document-authored/tool tab strips;
 - Hyprland mapped/hidden/group/scratchpad handling, mapped-only child-provider
-  routing with unmapped matching evidence, and Herdr protocol-20 shape;
+  routing with unmapped matching evidence, and Herdr feature discovery of
+  every supported kind, parent links, and exact focus targets using the
+  synthetic `tests/fixtures/herdr-snapshot.json` response. Herdr tests cover
+  older, future, and absent version/protocol labels; extra fields; independently
+  missing/malformed collections; invalid or duplicate native IDs; optional
+  ranking metadata; unavailable snapshots; and focus failures before routing;
 - Ghostty effective-binding filtering, 9+ virtualized rows, duplicate
   fingerprint occurrences, fail-closed mutations, and exact-address paired
   key-state construction; unnamed deeply nested palette search fields, cleanup
   through the opening action after failed detection/text writes/cancellation,
-  preservation of existing and already-dismissed dialogs, quiet capability
+  palette operation without an executable version probe, rejection of missing
+  native actions before focus, preservation of existing and already-dismissed
+  dialogs, quiet capability
   fallback per process birth, native-tab polling without focus or a modal,
   and surface cache revocation;
 - Neovim's unique/ambiguous Herdr and multi-surface Ghostty routing;
@@ -175,7 +182,8 @@ single refresh followed by a visible stale notification.
 - Kitty: multiple OS windows, tabs, panes, duplicate titles, a removed pane,
   and a stale runtime socket. Confirm numeric IDs select the intended object
   before its exact outer window is focused.
-- Ghostty 1.3.1: multiple processes/windows, 9+ tabs, horizontal and vertical
+- Ghostty with the required native palette controls: multiple processes/windows,
+  9+ tabs, horizontal and vertical
   splits, unselected tabs, identical title/cwd rows, and enough rows to force
   palette virtualization. First leave Ghostty pane discovery off and confirm
   opening Everything never opens a palette or changes Ghostty focus, while
@@ -202,7 +210,7 @@ single refresh followed by a visible stale notification.
   clients, a remote-only client, immutable duplicate titles, and closed
   targets. Confirm only one unique local client is switched; otherwise a fresh
   local attach opens.
-- Herdr: multiple running local protocol-20 sessions, detached sessions,
+- Herdr: multiple running local sessions exposing native snapshots, detached sessions,
   workspaces/tabs/panes, and agents in idle/working/blocked/done states. Confirm
   exact socket focus methods and fresh attach behavior for ambiguous hosts.
 - Neovim: displayed, hidden, loaded, unloaded, and modified listed buffers;

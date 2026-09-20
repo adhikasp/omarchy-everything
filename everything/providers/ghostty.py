@@ -33,7 +33,6 @@ from .hyprland import focus_address, lua_string
 
 
 FOCUS_PREFIX = "Focus:"
-GHOSTTY_131 = re.compile(r"(?<![0-9.])1\.3\.1(?![0-9.])")
 
 
 class PaletteUnavailable(CommandError):
@@ -360,9 +359,6 @@ class GhosttyProvider:
     async def _palette_session(self, context: ScanContext, top: TopLevel) -> AsyncIterator[PaletteState]:
         if not context.allow_ghostty_palette:
             raise PaletteUnavailable("Ghostty pane discovery is disabled")
-        version = await context.runner.run(["ghostty", "+version"], timeout=1.0)
-        if version.returncode != 0 or not GHOSTTY_131.search(version.stdout + version.stderr):
-            raise PaletteUnavailable("Ghostty palette requires the shipped 1.3.1 interface")
         if self._modal_markers(top.application):
             raise CommandError("Ghostty already has an open dialog")
         toggle = self._command_palette_toggle(top)

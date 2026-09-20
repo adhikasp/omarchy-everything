@@ -13,9 +13,6 @@ from .base import ProviderResult, ScanContext, normalized_address, route_for_pro
 from .hyprland import focus_address, launch_terminal_and_focus
 
 
-HERDR_PROTOCOL = 20
-
-
 class HerdrProvider:
     name = "herdr"
 
@@ -54,9 +51,18 @@ class HerdrProvider:
             except (OSError, ValueError, CommandError) as error:
                 warnings.append(f"Herdr session {name}: {error}")
                 continue
-            if int(snapshot.get("protocol") or 0) != HERDR_PROTOCOL:
-                warnings.append(f"Herdr session {name} uses unsupported protocol {snapshot.get('protocol')}")
-                continue
+
+            # Discover each collection independently. Release/protocol labels
+            # say nothing about whether these native targets are available.
+            collections = {
+                key: self._rows(snapshot, key, id_key, name, warnings)
+                for key, id_key in (
+                    ("workspaces", "workspace_id"),
+                    ("tabs", "tab_id"),
+                    ("panes", "pane_id"),
+                    ("agents", "pane_id"),
+                )
+            }
 
             identity = (socket_path, server_pid, birth, socket_info.st_dev, socket_info.st_ino)
             hosts = self._session_hosts(context, name)
@@ -82,12 +88,8 @@ class HerdrProvider:
             workspace_ids: dict[str, str] = {}
             tab_ids: dict[str, str] = {}
             pane_ids: dict[str, str] = {}
-            for workspace in snapshot.get("workspaces", []):
-                if not isinstance(workspace, dict):
-                    continue
-                native_id = str(workspace.get("workspace_id") or "")
-                if not native_id:
-                    continue
+            for workspace in collections["workspaces"]:
+                native_id = workspace["workspace_id"]
                 item_id = stable_id(self.name, *identity, "workspace", native_id)
                 workspace_ids[native_id] = item_id
                 status = str(workspace.get("agent_status") or "unknown")
@@ -109,13 +111,9 @@ class HerdrProvider:
                         ),
                     )
                 )
-            for tab in snapshot.get("tabs", []):
-                if not isinstance(tab, dict):
-                    continue
-                native_id = str(tab.get("tab_id") or "")
+            for tab in collections["tabs"]:
+                native_id = tab["tab_id"]
                 workspace_id = str(tab.get("workspace_id") or "")
-                if not native_id:
-                    continue
                 item_id = stable_id(self.name, *identity, "tab", native_id)
                 tab_ids[native_id] = item_id
                 status = str(tab.get("agent_status") or "unknown")
@@ -134,13 +132,9 @@ class HerdrProvider:
                         activation=self._activation(socket_path, name, server_pid, birth, "tab", native_id, hosts),
                     )
                 )
-            for pane in snapshot.get("panes", []):
-                if not isinstance(pane, dict):
-                    continue
-                native_id = str(pane.get("pane_id") or "")
+            for pane in collections["panes"]:
+                native_id = pane["pane_id"]
                 tab_id = str(pane.get("tab_id") or "")
-                if not native_id:
-                    continue
                 item_id = stable_id(self.name, *identity, "pane", native_id)
                 pane_ids[native_id] = item_id
                 cwd = canonical_path(str(pane.get("foreground_cwd") or pane.get("cwd") or ""))
@@ -181,10 +175,8 @@ class HerdrProvider:
                         ),
                     }
                 )
-            for agent in snapshot.get("agents", []):
-                if not isinstance(agent, dict):
-                    continue
-                pane_id = str(agent.get("pane_id") or "")
+            for agent in collections["agents"]:
+                pane_id = agent["pane_id"]
                 reference = agent.get("agent_session") if isinstance(agent.get("agent_session"), dict) else {}
                 identity_value = str(reference.get("value") or pane_id)
                 agent_name = str(agent.get("agent") or "Agent")
@@ -203,7 +195,7 @@ class HerdrProvider:
                         parent_id=pane_ids.get(pane_id, session_id),
                         badges=[agent_name.title(), status.title()],
                         active=pane_id == focused_pane and bool(agent.get("focused")),
-                        recency=4000 if pane_id == focused_pane else float(agent.get("state_change_seq") or 0) % 1000,
+                        recency=4000 if pane_id == focused_pane else self._agent_recency(agent),
                         activation=self._activation(socket_path, name, server_pid, birth, "pane", pane_id, hosts),
                     )
                 )
@@ -224,12 +216,43 @@ class HerdrProvider:
         )
 
     @staticmethod
+    def _native_id(value: Any) -> bool:
+        return isinstance(value, str) and bool(value.strip()) and not any(
+            character in value for character in ("\x00", "\n", "\r")
+        )
+
+    @classmethod
+    def _rows(
+        cls, snapshot: dict[str, Any], key: str, id_key: str,
+        session_name: str, warnings: list[str],
+    ) -> list[dict[str, Any]]:
+        rows = snapshot.get(key, [])
+        if not isinstance(rows, list):
+            warnings.append(f"Herdr session {session_name}: {key} collection is not an array")
+            return []
+        valid = [row for row in rows if isinstance(row, dict) and cls._native_id(row.get(id_key))]
+        counts: dict[str, int] = {}
+        for row in valid:
+            native_id = row[id_key]
+            counts[native_id] = counts.get(native_id, 0) + 1
+        unique = [row for row in valid if counts[row[id_key]] == 1]
+        if len(unique) != len(rows):
+            warnings.append(f"Herdr session {session_name}: {key} contains invalid or ambiguous native IDs")
+        return unique
+
+    @staticmethod
+    def _agent_recency(agent: dict[str, Any]) -> float:
+        value = agent.get("state_change_seq")
+        # Optional ranking metadata must not disable native discovery.
+        return value % 1000 if isinstance(value, int) and not isinstance(value, bool) else 0
+
+    @staticmethod
     def _snapshot(response: dict[str, Any]) -> dict[str, Any]:
         if isinstance(response.get("error"), dict):
             raise CommandError(str(response["error"].get("message") or "Herdr request failed"))
         result = response.get("result")
         if not isinstance(result, dict) or result.get("type") != "session_snapshot":
-            raise CommandError("Herdr did not return a protocol-20 snapshot")
+            raise CommandError("Herdr did not return a session snapshot")
         snapshot = result.get("snapshot")
         if not isinstance(snapshot, dict):
             raise CommandError("Herdr snapshot payload is missing")
@@ -346,7 +369,11 @@ class HerdrProvider:
         if server_pid and process_birth(server_pid) != str(activation.get("birth")):
             raise CommandError("Herdr server was replaced")
         kind = str(activation.get("target_kind") or "")
-        target_id = str(activation.get("target_id") or "")
+        target_id = activation.get("target_id")
+        if kind not in {"session", "workspace", "tab", "pane"}:
+            raise CommandError("Unknown Herdr activation target")
+        if kind != "session" and not self._native_id(target_id):
+            raise CommandError("Herdr target has no exact native ID")
         method = {"workspace": "workspace.focus", "tab": "tab.focus", "pane": "pane.focus"}.get(kind)
         if method:
             key = kind + "_id"
@@ -357,6 +384,8 @@ class HerdrProvider:
             )
             if isinstance(response.get("error"), dict):
                 raise CommandError(str(response["error"].get("message") or "Herdr target closed"))
+            if not isinstance(response.get("result"), dict):
+                raise CommandError("Herdr focus did not return a result")
 
         routes = [
             route

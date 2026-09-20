@@ -1,0 +1,94 @@
+{
+  "id": "everything:snapshot",
+  "result": {
+    "type": "session_snapshot",
+    "snapshot": {
+      "protocol": 22,
+      "version": "0.9.1",
+      "focused_workspace_id": "workspace-1",
+      "focused_tab_id": "tab-1",
+      "focused_pane_id": "pane-1",
+      "workspaces": [
+        {
+          "workspace_id": "workspace-1",
+          "number": 1,
+          "label": "Project",
+          "focused": true,
+          "tab_count": 1,
+          "pane_count": 2,
+          "active_tab_id": "tab-1",
+          "agent_status": "working"
+        }
+      ],
+      "tabs": [
+        {
+          "tab_id": "tab-1",
+          "workspace_id": "workspace-1",
+          "number": 1,
+          "label": "Development",
+          "focused": true,
+          "pane_count": 2,
+          "agent_status": "working"
+        }
+      ],
+      "panes": [
+        {
+          "pane_id": "pane-1",
+          "terminal_id": "terminal-1",
+          "workspace_id": "workspace-1",
+          "tab_id": "tab-1",
+          "focused": true,
+          "revision": 3,
+          "agent": "claude",
+          "agent_session": {
+            "agent": "claude",
+            "kind": "id",
+            "source": "hook",
+            "value": "agent-session-1"
+          },
+          "agent_status": "working",
+          "cwd": "/project",
+          "foreground_cwd": "/project/src",
+          "terminal_title": "Implement feature",
+          "terminal_title_stripped": "Implement feature"
+        },
+        {
+          "pane_id": "pane-2",
+          "terminal_id": "terminal-2",
+          "workspace_id": "workspace-1",
+          "tab_id": "tab-1",
+          "focused": false,
+          "revision": 1,
+          "agent_status": "unknown",
+          "cwd": "/project",
+          "terminal_title": "Shell",
+          "terminal_title_stripped": "Shell"
+        }
+      ],
+      "layouts": [],
+      "agents": [
+        {
+          "terminal_id": "terminal-1",
+          "workspace_id": "workspace-1",
+          "tab_id": "tab-1",
+          "pane_id": "pane-1",
+          "focused": true,
+          "revision": 3,
+          "state_change_seq": 2,
+          "agent": "claude",
+          "agent_session": {
+            "agent": "claude",
+            "kind": "id",
+            "source": "hook",
+            "value": "agent-session-1"
+          },
+          "agent_status": "working",
+          "cwd": "/project",
+          "foreground_cwd": "/project/src",
+          "terminal_title": "Implement feature",
+          "terminal_title_stripped": "Implement feature"
+        }
+      ]
+    }
+  }
+}

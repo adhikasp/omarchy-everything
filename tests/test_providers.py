@@ -6,6 +6,7 @@ import os
 import socket
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 from everything.atspi_runtime import _AT_SPI_CANCEL_EVENT
@@ -73,14 +74,208 @@ class HyprlandTests(unittest.IsolatedAsyncioTestCase):
 
 
 class HerdrTests(unittest.TestCase):
-    def test_protocol_snapshot_shape_is_strict(self) -> None:
-        snapshot = {"protocol": 20, "workspaces": []}
+    def test_snapshot_shape_is_strict_without_version_fields(self) -> None:
+        snapshot = {"workspaces": []}
         parsed = HerdrProvider._snapshot(
             {"id": "x", "result": {"type": "session_snapshot", "snapshot": snapshot}}
         )
         self.assertIs(parsed, snapshot)
-        with self.assertRaises(Exception):
+        with self.assertRaises(CommandError):
             HerdrProvider._snapshot({"id": "x", "result": {"type": "other"}})
+
+
+class HerdrScanTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        root = tempfile.TemporaryDirectory(prefix="everything-herdr-scan-")
+        self.addCleanup(root.cleanup)
+        self.socket_path = os.path.join(root.name, "session.sock")
+        handle = socket.socket(socket.AF_UNIX)
+        self.addCleanup(handle.close)
+        handle.bind(self.socket_path)
+        self.session = {"name": "default", "running": True, "socket_path": self.socket_path}
+        self.runner = FakeRunner(json.dumps({"sessions": [self.session]}))
+        self.context = ScanContext(self.runner, ProcTable({}))  # type: ignore[arg-type]
+        # Synthetic values with the shape of the observed Herdr socket API.
+        self.response = json.loads(
+            Path(__file__).with_name("fixtures").joinpath("herdr-snapshot.json").read_text()
+        )
+
+    async def scan_response(self, response=None):
+        with patch(
+            "everything.providers.herdr.unix_json_request",
+            new=AsyncMock(return_value=self.response if response is None else response),
+        ):
+            return await HerdrProvider().scan(self.context)
+
+    async def test_snapshot_discovers_all_herdr_kinds_and_exact_focus_targets(self) -> None:
+        provider = HerdrProvider()
+        with patch(
+            "everything.providers.herdr.unix_json_request",
+            new=AsyncMock(return_value=self.response),
+        ) as request:
+            result = await provider.scan(self.context)
+
+        request.assert_awaited_once_with(
+            self.socket_path,
+            {"id": "everything:snapshot", "method": "session.snapshot", "params": {}},
+            timeout=1.1,
+        )
+        self.assertEqual(self.runner.calls, [("herdr", "session", "list", "--json")])
+        self.assertEqual(result.warnings, [])
+        self.assertEqual(len(result.items), 6)
+        rows = {(row.kind, row.title): row for row in result.items}
+        session = rows[("herdr-session", "default")]
+        workspace = rows[("herdr-workspace", "Project")]
+        tab = rows[("herdr-tab", "Development")]
+        pane = rows[("herdr-pane", "Implement feature")]
+        shell = rows[("herdr-pane", "Shell")]
+        agent = rows[("herdr-agent", "Implement feature")]
+        self.assertEqual(workspace.parent_id, session.id)
+        self.assertEqual(tab.parent_id, workspace.id)
+        self.assertEqual(pane.parent_id, tab.id)
+        self.assertEqual(shell.parent_id, tab.id)
+        self.assertEqual(agent.parent_id, pane.id)
+        self.assertTrue(pane.active)
+        self.assertTrue(agent.active)
+        self.assertFalse(shell.active)
+        self.assertEqual(agent.badges, ["Claude", "Working"])
+        self.assertEqual(pane.context, "/project/src")
+        self.assertEqual(result.metadata["panes"][0]["pane_id"], "pane-1")
+        self.assertEqual(result.metadata["panes"][0]["activation"], pane.activation)
+
+        with patch(
+            "everything.providers.herdr.unix_json_request",
+            new=AsyncMock(return_value={"result": {}}),
+        ) as focus, patch(
+            "everything.providers.herdr.launch_terminal_and_focus", new=AsyncMock()
+        ) as launch:
+            for row, kind, native_id in (
+                (workspace, "workspace", "workspace-1"),
+                (tab, "tab", "tab-1"),
+                (pane, "pane", "pane-1"),
+                (shell, "pane", "pane-2"),
+                (agent, "pane", "pane-1"),
+            ):
+                await provider.activate({**row.activation, "allow_new_client": False}, self.context)
+                focus.assert_awaited_with(
+                    self.socket_path,
+                    {"id": "everything:focus", "method": kind + ".focus", "params": {kind + "_id": native_id}},
+                    timeout=1.0,
+                )
+            launch.assert_not_awaited()
+
+    async def test_version_labels_do_not_gate_available_features(self) -> None:
+        expected = await self.scan_response()
+        for labels in (
+            {"protocol": 20, "version": "0.0.1"},
+            {"protocol": 999999, "version": "99.0.0-dev"},
+            {"protocol": "future", "version": None},
+            {},
+        ):
+            with self.subTest(labels=labels):
+                response = json.loads(json.dumps(self.response))
+                snapshot = response["result"]["snapshot"]
+                snapshot.pop("protocol")
+                snapshot.pop("version")
+                snapshot.update(labels)
+                snapshot["new_feature"] = {"ignored": True}
+                result = await self.scan_response(response)
+                self.assertEqual(result.warnings, [])
+                self.assertEqual(
+                    [(row.id, row.kind, row.activation) for row in result.items],
+                    [(row.id, row.kind, row.activation) for row in expected.items],
+                )
+
+    async def test_missing_or_malformed_collection_only_omits_its_feature(self) -> None:
+        for key, kind in (
+            ("workspaces", "herdr-workspace"), ("tabs", "herdr-tab"),
+            ("panes", "herdr-pane"), ("agents", "herdr-agent"),
+        ):
+            for value in ("missing", None, {}, "not-an-array"):
+                with self.subTest(key=key, value=value):
+                    response = json.loads(json.dumps(self.response))
+                    snapshot = response["result"]["snapshot"]
+                    removed = len(snapshot.pop(key))
+                    if value != "missing":
+                        snapshot[key] = value
+                    result = await self.scan_response(response)
+                    self.assertEqual(len(result.items), 6 - removed)
+                    self.assertNotIn(kind, {row.kind for row in result.items})
+                    self.assertEqual(bool(result.warnings), value != "missing")
+
+    async def test_missing_or_ambiguous_native_ids_do_not_become_targets(self) -> None:
+        for key, id_key, kind in (
+            ("workspaces", "workspace_id", "herdr-workspace"),
+            ("tabs", "tab_id", "herdr-tab"),
+            ("panes", "pane_id", "herdr-pane"),
+            ("agents", "pane_id", "herdr-agent"),
+        ):
+            for value in (None, "", "  ", 7, True, {}, "pane\n1", "pane\x001", "duplicate"):
+                with self.subTest(key=key, value=value):
+                    response = json.loads(json.dumps(self.response))
+                    rows = response["result"]["snapshot"][key]
+                    if value == "duplicate":
+                        rows.append(dict(rows[0]))
+                    else:
+                        rows[0][id_key] = value
+                    result = await self.scan_response(response)
+                    self.assertEqual(len(result.items), 5)
+                    targets = [row for row in result.items if row.kind == kind]
+                    self.assertEqual([row.title for row in targets], ["Shell"] if key == "panes" else [])
+                    self.assertEqual(len(result.warnings), 1)
+
+    async def test_optional_ranking_metadata_does_not_disable_discovery(self) -> None:
+        snapshot = self.response["result"]["snapshot"]
+        snapshot["focused_pane_id"] = "pane-2"
+        snapshot["agents"][0]["state_change_seq"] = {"new": "format"}
+        result = await self.scan_response()
+        self.assertEqual(len(result.items), 6)
+        self.assertEqual(result.warnings, [])
+        self.assertEqual(next(row.recency for row in result.items if row.kind == "herdr-agent"), 0)
+
+    async def test_unavailable_snapshot_omits_only_that_session(self) -> None:
+        self.runner.stdout = json.dumps(
+            {"sessions": [{**self.session, "name": "unavailable"}, self.session]}
+        )
+        for response in (
+            {"error": {"code": "method_not_found", "message": "session.snapshot is unavailable"}},
+            {"result": {"type": "other"}},
+            {"result": {"type": "session_snapshot", "snapshot": None}},
+        ):
+            with self.subTest(response=response):
+                with patch(
+                    "everything.providers.herdr.unix_json_request",
+                    new=AsyncMock(side_effect=[response, self.response]),
+                ):
+                    result = await HerdrProvider().scan(self.context)
+                self.assertEqual(len(result.items), 6)
+                self.assertEqual(
+                    [row.title for row in result.items if row.kind == "herdr-session"],
+                    ["default"],
+                )
+                self.assertEqual(len(result.warnings), 1)
+                self.assertTrue(result.warnings[0].startswith("Herdr session unavailable:"))
+                self.assertEqual([session["name"] for session in result.metadata["sessions"]], ["default"])
+
+    async def test_focus_rejects_invalid_targets_before_sending_a_command(self) -> None:
+        result = await self.scan_response()
+        pane = next(row for row in result.items if row.kind == "herdr-pane")
+        with patch("everything.providers.herdr.unix_json_request", new=AsyncMock()) as request:
+            for fields in ({"target_id": ""}, {"target_id": 7}, {"target_kind": "other"}):
+                with self.subTest(fields=fields), self.assertRaises(CommandError):
+                    await HerdrProvider().activate({**pane.activation, **fields}, self.context)
+            request.assert_not_awaited()
+
+    async def test_unavailable_focus_fails_before_terminal_routing(self) -> None:
+        result = await self.scan_response()
+        pane = next(row for row in result.items if row.kind == "herdr-pane")
+        for response in ({}, {"result": None}, {"error": {"message": "pane.focus is unavailable"}}):
+            with self.subTest(response=response), patch(
+                "everything.providers.herdr.unix_json_request", new=AsyncMock(return_value=response)
+            ), patch("everything.providers.herdr.launch_terminal_and_focus", new=AsyncMock()) as launch:
+                with self.assertRaises(CommandError):
+                    await HerdrProvider().activate(pane.activation, self.context)
+                launch.assert_not_awaited()
 
 
 class HerdrActivationTests(unittest.IsolatedAsyncioTestCase):
@@ -256,7 +451,7 @@ class FakeGhostty:
         return True
 
     def context(self, *, allow=True, refresh=True):
-        return ScanContext(FakeRunner("Ghostty 1.3.1"), ProcTable({}),
+        return ScanContext(FakeRunner(""), ProcTable({}),
                            hypr_clients=[self.client], include_ghostty=refresh,
                            allow_ghostty_palette=allow)
 
@@ -323,6 +518,26 @@ class GhosttyPaletteTests(unittest.IsolatedAsyncioTestCase):
 class GhosttyLifecycleTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.focus = self.enterContext(patch("everything.providers.ghostty.focus_address", new=AsyncMock()))
+
+    async def test_palette_uses_live_capabilities_without_a_version_command(self):
+        ghostty = FakeGhostty()
+        context = ghostty.context()
+        context.runner.run = AsyncMock(side_effect=AssertionError("no executable probe is needed"))
+        async with GhosttyProvider()._palette_session(context, ghostty.top) as palette:
+            self.assertIs(palette.search, ghostty.search)
+            self.assertEqual(ghostty.search.text, "Focus:")
+        context.runner.run.assert_not_awaited()
+        self.assertEqual(ghostty.toggles, 2)
+        self.assertFalse(ghostty.opened)
+
+    async def test_missing_palette_action_is_rejected_before_focus(self):
+        ghostty = FakeGhostty()
+        ghostty.frame.action = None
+        with self.assertRaisesRegex(PaletteUnavailable, "capability is unavailable"):
+            async with GhosttyProvider()._palette_session(ghostty.context(), ghostty.top):
+                self.fail("missing palette action was accepted")
+        self.assertEqual(ghostty.toggles, 0)
+        self.focus.assert_not_awaited()
 
     async def test_unnamed_deep_search_uses_its_own_modal(self):
         ghostty = FakeGhostty()

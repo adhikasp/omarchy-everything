@@ -26,8 +26,8 @@ client uses the generic window glyph. Entry-only identities are never inferred
 from a raw class, and web apps do not inherit their host browser's glyph. These
 hints are display-only and never participate in activation identity.
 
-Foot and Alacritty have no internal Linux tab/split adapter in the supported
-versions, so their only native things are their exact managed windows. tmux,
+Everything has no internal Linux tab/split adapter for Foot or Alacritty, so
+their only native things are their exact managed windows. tmux,
 Herdr, and Neovim nested inside them are still expanded. This
 matches [Alacritty's explicit non-goal of providing tabs or splits](https://github.com/alacritty/alacritty#faq).
 
@@ -138,20 +138,20 @@ process identity—including socket device/inode and process birth—are part of
 every ID and are revalidated to prevent PID/socket reuse. Command construction
 follows Kitty's [remote-control protocol](https://sw.kovidgoyal.net/kitty/remote-control/).
 
-## Ghostty 1.3.1
+## Ghostty
 
 Native GTK tab titles come from strict AT-SPI tabs. Pane/surface coverage is a
-capability-tested bridge to the command palette implementation shipped in
-Ghostty 1.3.1; it is not presented as a public Ghostty IPC API.
-[Ghostty's pinned 1.3.1 source](https://github.com/ghostty-org/ghostty/tree/v1.3.1/src)
-is the compatibility boundary.
+capability-tested bridge to the running application's command palette; it is
+not presented as a public Ghostty IPC API. Its live native action, modal
+controls, and verified navigation determine support. No executable version
+probe or release-number check is used.
 
 The palette bridge is off by default. The user must enable both the separate
 Ghostty pane-discovery option and the Terminal panes group. Native tabs refresh
 on every scan without opening a palette or changing focus, including on builds
 without the palette capability. With the bridge enabled, a panel opening:
 
-1. Verifies the running class and exact `ghostty +version` output.
+1. Matches the live managed Ghostty client and its exact AT-SPI top level.
 2. Requires a reusable native `win.toggle-command-palette` action. An effective
    keyboard shortcut alone is insufficient because it cannot safely undo an
    opening when modal detection fails. An already-open dialog is left alone.
@@ -208,13 +208,24 @@ the provider for identity and routing but are not rendered in that value.
 
 `herdr session list --json` supplies running local session sockets. Everything
 accepts only absolute current-user Unix sockets, requests a
-`session.snapshot`, and requires protocol 20 before emitting session,
-workspace, tab, pane, and agent rows with current agent state.
+`session.snapshot`, and requires a `session_snapshot` result with an object
+payload. Version and protocol fields are informational and may be absent.
+The returned workspace, tab, pane, and agent collections determine which
+features are available. An absent collection omits that kind; a malformed
+collection or row produces a nonfatal warning without suppressing the other
+features or sessions. Every workspace/tab/pane target must have a nonempty
+string native ID without NULs or line breaks, unique within its collection.
+Agent targets require the same unambiguous pane ID. Extra fields and absent
+optional display/ranking metadata do not prevent discovery. The parent graph
+uses the immediate parent when available, falling back to the session when
+that parent collection is unavailable.
 
 Activation sends exact `workspace.focus`, `tab.focus`, or `pane.focus` socket
-requests. One unambiguous attached local client is focused; detached or
-ambiguous-host sessions open a fresh `herdr session attach`. Remote sessions
-are not discovered.
+requests with those native IDs. Discovery never issues focus commands as
+capability probes. An unavailable focus method, native error, or missing result
+fails activation before terminal routing. One unambiguous attached local client
+is focused; detached or ambiguous-host sessions open a fresh
+`herdr session attach`. Remote sessions are not discovered.
 
 ## Neovim
 

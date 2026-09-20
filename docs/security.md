@@ -22,8 +22,7 @@ The helper may execute only these command families:
   targeted `hl.dsp.send_key_state` cases documented below.
 - `kitten @ --to unix:<validated-socket> ls`, `focus-tab --match id:<number>`,
   and `focus-window --match id:<number>`.
-- `ghostty +version` and
-  `ghostty +list-keybinds --plain` while a Ghostty client is actually managed.
+- `ghostty +list-keybinds --plain` while a Ghostty client is actually managed.
 - `tmux -S <validated-socket> list-sessions`, `list-windows -a`,
   `list-panes -a`, `list-clients`, and `switch-client`; or a new local
   `omarchy-launch-terminal tmux -S … attach-session …` client.
@@ -59,8 +58,12 @@ checks:
   the socket's current-user Nvim PID.
 
 Herdr requests are newline-delimited JSON methods `session.snapshot`,
-`workspace.focus`, `tab.focus`, and `pane.focus`. They require protocol 20 and
-have bounded connect/read/write timeouts and response size.
+`workspace.focus`, `tab.focus`, and `pane.focus`, with bounded
+connect/read/write timeouts and response size. Snapshot structure and unique,
+nonempty string native IDs establish usable targets; release/protocol labels
+are not trust checks. Invalid or ambiguous native IDs never reach a focus
+request. Discovery sends no mutating focus probes, and activation requires a
+successful result before terminal routing.
 
 ## `/proc` reads
 
@@ -139,7 +142,7 @@ is accepted, and D-Bus activation never starts an application.
 
 ## Ghostty palette and synthetic keys
 
-Ghostty's 1.3.1 command palette is an opt-in, capability-tested bridge. It
+Ghostty's command palette is an opt-in, capability-tested bridge. It
 requires a literal-true shell setting and an enabled Terminal panes group.
 Discovery and cleanup use the same native `win.toggle-command-palette` action;
 there is no synthetic opening shortcut. A pre-existing modal is left alone. The

@@ -178,6 +178,14 @@ call never returns.
 Each adapter returns `ProviderResult`: public `Thing` values, nonfatal
 warnings, and private routing metadata. Adapter failure removes only that
 adapter's internal rows; an outer managed-window result remains available.
+External application support is determined by exposed commands, response
+structures, native identifiers, and live controls. Release and protocol
+numbers never gate a provider. Each adapter owns validation of the features it
+uses; missing features omit their dependent things while other discovered
+features remain available. Herdr discovers collections and exact native targets
+from its snapshot response. Ghostty discovers the palette bridge through its
+native action and modal controls. See [provider behavior](providers.md) for
+the required features and activation failure behavior.
 The AT-SPI adapter owns native-tab structural validation, native-control
 settling, and the private capability-tested GTK action routes used by current
 Pinta and Nautilus. Those action destinations, object paths, names, and integer

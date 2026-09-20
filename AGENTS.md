@@ -43,6 +43,8 @@ Follow the linked document for the boundary you are changing.
   metadata and never become results merely because they exist.
 - Target the current Omarchy Quattro and packaged application interfaces. Do
   not add legacy compatibility paths or Codex plugin metadata.
+- Discover external application support from available features, never from
+  release or protocol version numbers. See [Providers](docs/providers.md).
 - Preserve default shell panel placement and keyboard behavior. Extend shell
   primitives instead of replacing their lifecycle, anchoring, or navigation.
 - Work in this repository only. Do not patch, install, or hot-reload a live
