@@ -193,6 +193,14 @@ Panel {
     searchField.forceActiveFocus()
   }
 
+  function kindCount(kind) {
+    var total = 0
+    var rows = rankedItems
+    for (var i = 0; i < rows.length; i++)
+      if (String(rows[i].kind || "") === String(kind || "")) total += 1
+    return total
+  }
+
   function groupCollapsed(kind) {
     return collapsedKinds && collapsedKinds[String(kind || "")] === true
   }
@@ -492,8 +500,13 @@ Panel {
     return source && source !== generic ? source : ""
   }
 
+  function hasIconHints(item) {
+    var kind = String(item && item.kind || "")
+    return kind === "window" || kind === "app" || kind === "browser-tab"
+  }
+
   function resolveWindowDesktopEntry(item) {
-    if (!item || String(item.kind || "") !== "window") return ""
+    if (!hasIconHints(item)) return ""
     var hints = Model.iconHintList(item)
     if (hints.length === 0) return null
 
@@ -507,7 +520,7 @@ Panel {
   }
 
   function windowIconSource(item, resolvedEntry) {
-    if (!item || String(item.kind || "") !== "window") return ""
+    if (!hasIconHints(item)) return ""
     var hints = Model.iconHintList(item)
     if (hints.length === 0) return ""
 
@@ -663,15 +676,24 @@ Panel {
     }
   }
 
-  KeyboardPanel {
+  CenteredPanel {
     id: popup
     anchorItem: button
     owner: root
     bar: root.bar
     open: root.opened
     focusTarget: root.popupMode === root.groupsMode ? groupList : searchField
-    contentWidth: popup.fittedContentWidth(Style.space(620))
-    contentHeight: popup.cappedContentHeight(Style.space(620))
+    // Wide, centered card whose height follows its results (up to 60% of the
+    // screen); the top edge stays put so typing never moves the search field.
+    readonly property real resultsDesiredHeight: popup.verticalContentInset
+      + searchField.height + Style.space(4)
+      + Math.max(resultList.contentHeight, Style.space(56))
+      + Style.space(6) + footer.implicitHeight
+    contentWidth: popup.fittedContentWidth(Style.space(720))
+    contentHeight: root.popupMode === root.groupsMode
+      ? popup.cappedContentHeight(Style.space(520))
+      : popup.cappedContentHeight(Math.max(Style.space(140),
+          Math.min(resultsDesiredHeight, popup.screenH * 0.6)))
 
     PanelKeyCatcher {
       id: keyCatcher
@@ -719,12 +741,12 @@ Panel {
         anchors.right: parent.right
         visible: root.popupMode === root.resultsMode
         enabled: visible
-        placeholderText: "Search everything…"
+        placeholderText: "Search windows, tabs, apps, menu…"
         foreground: root.foreground
         activeFocusOnTab: true
         Accessible.role: Accessible.EditableText
         Accessible.name: "Search things"
-        Accessible.description: "Type a contiguous title or group-name substring"
+        Accessible.description: "Type part of a title; characters may be spread out (fuzzy), or a group name"
         Accessible.editable: true
         Accessible.focusable: true
         Accessible.focused: activeFocus
@@ -740,8 +762,63 @@ Panel {
           } else if (event.key === Qt.Key_Escape) {
             event.accepted = true
             root.handleEscape()
+          } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+            // Launcher behaviour: Enter opens the top (selected) result
+            // straight from the search box, no Tab into the list first.
+            event.accepted = true
+            if (resultList.currentIndex < 0 && resultList.count > 0)
+              root.setCurrentIndex(0, false)
+            root.activateCurrent()
           }
         }
+      }
+
+      Item {
+        id: footer
+        objectName: "everything-footer"
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        visible: root.popupMode === root.resultsMode
+        implicitHeight: visible ? Style.space(24) : 0
+        height: implicitHeight
+
+        Text {
+          anchors.left: parent.left
+          anchors.leftMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          text: "\u21b5 open   \u21e5 list   / search   \u232b hide   esc close"
+          color: root.dimForeground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+
+        Text {
+          anchors.right: parent.right
+          anchors.rightMargin: Style.space(8)
+          anchors.verticalCenter: parent.verticalCenter
+          text: root.rankedItems.length + (root.rankedItems.length === 1 ? " result" : " results")
+          color: root.dimForeground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.caption
+        }
+      }
+
+      Text {
+        id: emptyState
+        objectName: "everything-empty"
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: searchField.bottom
+        anchors.topMargin: Style.space(20)
+        visible: root.popupMode === root.resultsMode && root.rankedItems.length === 0
+        text: searchField.text.length > 0
+          ? "No matches for \u201c" + searchField.text + "\u201d"
+          : "Nothing open yet\u2026"
+        color: root.dimForeground
+        font.family: Style.font.family
+        font.pixelSize: Style.font.body
+        Accessible.role: Accessible.StaticText
+        Accessible.name: text
       }
 
       ListView {
@@ -751,7 +828,7 @@ Panel {
         anchors.topMargin: Style.space(4)
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.bottom: parent.bottom
+        anchors.bottom: footer.top
         anchors.bottomMargin: Style.space(6)
         visible: root.popupMode === root.resultsMode
         enabled: visible
@@ -815,6 +892,7 @@ Panel {
             anchors.rightMargin: Style.space(8)
             anchors.verticalCenter: parent.verticalCenter
             text: Model.kindSectionLabel(sectionHeading.section)
+              + "  \u00b7  " + root.kindCount(sectionHeading.section)
             color: root.dimForeground
             font.family: Style.font.family
             font.pixelSize: Style.font.caption
@@ -913,7 +991,8 @@ Panel {
               smooth: true
               sourceSize.width: width
               sourceSize.height: height
-              layer.enabled: visible
+              // App launcher icons keep their own colors; window icons are tinted.
+              layer.enabled: visible && row.modelData.kind !== "app"
               layer.effect: MultiEffect {
                 colorization: 1.0
                 colorizationColor: row.highlighted ? root.foreground : root.dimForeground
@@ -944,6 +1023,13 @@ Panel {
             }
           }
 
+          TextMetrics {
+            id: metadataMetrics
+            text: row.metadata
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+          }
+
           Text {
             id: metadataLabel
             objectName: "everything-metadata-" + row.index
@@ -951,7 +1037,7 @@ Panel {
             anchors.rightMargin: Style.space(8)
             anchors.verticalCenter: parent.verticalCenter
             visible: text.length > 0
-            width: visible ? Math.min(implicitWidth, resultList.width * 0.4) : 0
+            width: visible ? Math.min(metadataMetrics.advanceWidth, resultList.width * 0.4) : 0
             text: row.metadata
             color: root.dimForeground
             font.family: Style.font.family

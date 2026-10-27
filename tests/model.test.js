@@ -29,12 +29,12 @@ const item = (id, title, context, extra = {}) => ({
   const expectedKinds = [
     "window", "browser-tab", "app-tab", "terminal-tab", "terminal-pane",
     "herdr-agent", "herdr-workspace", "herdr-tab", "herdr-pane", "herdr-session",
-    "tmux-session", "tmux-window", "tmux-pane", "neovim-buffer",
+    "tmux-session", "tmux-window", "tmux-pane", "neovim-buffer", "app", "omarchy-menu",
   ]
   const expectedSections = [
     "Windows", "Browser tabs", "Application tabs", "Terminal tabs", "Terminal panes",
     "Herdr agents", "Herdr workspaces", "Herdr tabs", "Herdr panes", "Herdr sessions",
-    "tmux sessions", "tmux windows", "tmux panes", "Buffers",
+    "tmux sessions", "tmux windows", "tmux panes", "Buffers", "Apps", "Omarchy menu",
   ]
   assert.deepEqual(Array.from(catalog, group => group.kind), expectedKinds,
     "the catalog contains all supported groups in display order")
@@ -156,10 +156,12 @@ const item = (id, title, context, extra = {}) => ({
   const rows = [item("one", "Alpha Beta", ""), item("two", "Alpha", "Gamma")]
   assert.deepEqual(Array.from(sandbox.rank(rows, "alpha be", {}), row => row.id), ["one"],
     "a contiguous multi-word title substring matches")
-  assert.deepEqual(Array.from(sandbox.rank(rows, "alp bet", {}), row => row.id), [],
-    "separate query fragments do not match across a gap")
-  assert.deepEqual(Array.from(sandbox.rank(rows, "ab", {}), row => row.id), [],
-    "non-contiguous character subsequences do not match")
+  assert.deepEqual(Array.from(sandbox.rank(rows, "alp bet", {}), row => row.id), ["one"],
+    "separate query terms each match fuzzily, in any order")
+  assert.deepEqual(Array.from(sandbox.rank(rows, "ab", {}), row => row.id), ["one"],
+    "non-contiguous character subsequences match (fuzzy)")
+  assert.deepEqual(Array.from(sandbox.rank(rows, "zz", {}), row => row.id), [],
+    "characters that are not all present do not match")
   assert.deepEqual(Array.from(sandbox.rank(rows, "PHA B", {}), row => row.id), ["one"],
     "contiguous substring matching is case-insensitive")
   assert.deepEqual(Array.from(sandbox.rank([
@@ -453,11 +455,11 @@ const resultDelegateStart = qml.indexOf("\n        delegate: Item", resultListSt
 const listHandler = qml.slice(resultListStart, resultDelegateStart)
 const resultDelegateHandler = qml.slice(resultDelegateStart, qml.indexOf("MouseArea", resultDelegateStart))
 const barButtonHandler = qml.slice(qml.indexOf("BarIconButton {"),
-  qml.indexOf("KeyboardPanel {"))
+  qml.indexOf("CenteredPanel {"))
 assert.match(barButtonHandler, /useActiveColor:\s*false/,
   "opening the panel does not recolor its bar icon")
 assert.doesNotMatch(searchHandler, /Key_Backspace|Key_Delete/, "search owns editing keys")
-assert.match(searchHandler, /placeholderText:\s*"Search everything…"/,
+assert.match(searchHandler, /placeholderText:\s*"Search windows, tabs, apps, menu…"/,
   "the search placeholder uses the requested copy")
 assert.match(qml,
   /focusTarget:\s*root\.popupMode === root\.groupsMode \? groupList : searchField/,
@@ -601,11 +603,13 @@ assert.doesNotMatch(resultDelegateHandler, /border\.(?:width|color)/,
   "the highlighted thing uses fill without an outline")
 assert.doesNotMatch(qml, /refreshButton|Refresh all providers|everythingService\.refresh\(\)/,
   "automatic discovery does not expose a redundant manual refresh control")
-assert.doesNotMatch(qml, /statusText|statusMessage|Starting Everything|No matches|Some providers are unavailable|Refreshing…/,
-  "the panel renders no discovery, count, warning, or empty-state messages")
-assert.doesNotMatch(qml, /id:\s*footer|HJKL\/↑↓ move|Keyboard help:/,
-  "the panel renders no control-instruction footer")
-assert.doesNotMatch(qml, /centerOnBar\s*:/, "panel uses the shell's default icon anchoring")
+assert.doesNotMatch(qml, /statusText|statusMessage|Starting Everything|Some providers are unavailable|Refreshing…/,
+  "the panel renders no discovery or warning messages")
+assert.match(qml, /id:\s*emptyState[\s\S]*No matches for/,
+  "an empty search says so instead of showing a blank panel")
+assert.match(qml, /id:\s*footer[\s\S]*open[\s\S]*esc close/,
+  "a one-line key hint footer sits under the results")
+assert.match(qml, /CenteredPanel\s*\{/, "the panel is centered on screen, not hung from the bar icon")
 assert.doesNotMatch(qml, /function\s+(?:open|close|togglePanel)\s*\(/,
   "panel uses the inherited shell lifecycle")
 assert.match(qml,
@@ -624,3 +628,37 @@ assert.doesNotMatch(serviceQml, /function refresh\s*\(/,
   "the service has no unused manual refresh entry point")
 
 console.log("model.test.js: all tests passed")
+
+{
+  const launcher = [
+    item("win", "Firefox", "", { kind: "window" }),
+    item("app", "Firefox Web Browser", "", { kind: "app" }),
+    item("menu", "Style: Theme", "", { kind: "omarchy-menu" })
+  ]
+  assert.deepEqual(Array.from(sandbox.rank(launcher, "", {}, []), row => row.id), ["win"],
+    "launcher groups stay hidden until a query is typed")
+  assert.deepEqual(Array.from(sandbox.rank(launcher, "fire", {}, []), row => row.id), ["win", "app"],
+    "apps rank after windows once a query is typed")
+  assert.deepEqual(Array.from(sandbox.rank(launcher, "theme", {}, []), row => row.id), ["menu"],
+    "Omarchy menu routes are searchable by title")
+}
+
+{
+  const ranked = Array.from(sandbox.rank([
+    item("fuzzy", "Firefox", ""), item("exact", "FX Tool", ""), item("miss", "Terminal", ""),
+  ], "fx", {}), row => row.id)
+  assert.deepEqual(ranked, ["exact", "fuzzy"], "a substring hit outranks a fuzzy subsequence hit")
+  assert.deepEqual(Array.from(sandbox.rank([
+    item("mag", "Magic Recorder", ""), item("gc", "Google Chrome", ""),
+  ], "gc", {}), row => row.id), ["gc", "mag"],
+  "word-boundary matches outrank scattered mid-word ones")
+}
+
+{
+  const rows = [
+    item("weak", "adhikasp/herdr-command-plugin: Cmd+K for herdr: fuzzy-find any space, tab, agent, pane or command, with kind prefixes", "", { kind: "browser-tab" }),
+    item("strong", "Hacker News", "", { kind: "browser-tab" }),
+  ]
+  assert.deepEqual(Array.from(sandbox.rank(rows, "hkrnws", {}), row => row.id), ["strong", "weak"],
+    "among fuzzy hits the tighter match leads regardless of listing order")
+}

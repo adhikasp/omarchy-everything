@@ -1066,6 +1066,30 @@ class HostRoutingTests(unittest.TestCase):
         self.assertEqual(route["item_id"], "surface")  # type: ignore[index]
 
 
+class GhosttyWindowRoutingTests(unittest.TestCase):
+    def _context(self, clients: list[dict]) -> ScanContext:
+        processes = {
+            100: ProcessInfo(100, 1, "a", "ghostty", ("ghostty",), "/work"),
+            110: ProcessInfo(110, 100, "b", "herdr", ("herdr",), "/work"),
+        }
+        context = ScanContext(FakeRunner(""), ProcTable(processes))  # type: ignore[arg-type]
+        context.hypr_clients = clients
+        return context
+
+    def test_ghostty_without_pane_discovery_routes_to_its_only_window(self) -> None:
+        context = self._context([{"address": "0xaaa", "pid": 100, "class": "ghostty"}])
+        route = route_for_process(context, 110, cwd="/work")
+        self.assertEqual(route["provider"], "hyprland")  # type: ignore[index]
+        self.assertEqual(route["activation"]["address"], "0xaaa")  # type: ignore[index]
+
+    def test_ghostty_without_pane_discovery_is_not_guessed_across_windows(self) -> None:
+        context = self._context([
+            {"address": "0xaaa", "pid": 100, "class": "ghostty"},
+            {"address": "0xbbb", "pid": 100, "class": "ghostty"},
+        ])
+        self.assertIsNone(route_for_process(context, 110, cwd="/work"))
+
+
 class NeovimSocketTests(unittest.TestCase):
     def test_runtime_socket_walk_is_same_shape_and_one_level_deep(self) -> None:
         with tempfile.TemporaryDirectory(prefix="everything-nvim-") as root:

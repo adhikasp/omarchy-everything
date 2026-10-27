@@ -92,7 +92,12 @@ var GROUP_CATALOG = [
   { kind: "tmux-session", label: "tmux session", sectionLabel: "tmux sessions", icon: "\uf233" },
   { kind: "tmux-window", label: "tmux window", sectionLabel: "tmux windows", icon: "\uf24d" },
   { kind: "tmux-pane", label: "tmux pane", sectionLabel: "tmux panes", icon: "\uf0db" },
-  { kind: "neovim-buffer", label: "Neovim buffer", sectionLabel: "Buffers", icon: "\uf1c9" }
+  { kind: "neovim-buffer", label: "Neovim buffer", sectionLabel: "Buffers", icon: "\uf1c9" },
+  // Launcher groups (Super+Space coverage). They are QML-local, never come from
+  // the Python helper, and stay hidden until a query is typed so the idle list
+  // is still just what is already open.
+  { kind: "app", label: "App", sectionLabel: "Apps", icon: "\uf135", searchOnly: true },
+  { kind: "omarchy-menu", label: "Omarchy menu", sectionLabel: "Omarchy menu", icon: "\uf0c9", searchOnly: true }
 ]
 
 var GROUP_BY_KIND = {}
@@ -103,6 +108,11 @@ function catalogGroup(kind) {
   var value = String(kind || "")
   return Object.prototype.hasOwnProperty.call(GROUP_BY_KIND, value)
     ? GROUP_BY_KIND[value] : null
+}
+
+function isSearchOnlyKind(kind) {
+  var group = catalogGroup(kind)
+  return group !== null && group.searchOnly === true
 }
 
 function supportedGroupCatalog() {
@@ -175,6 +185,77 @@ function substringScore(haystack, needle) {
   if (contiguous > 0)
     return 7000 - Math.min(2000, contiguous * 16 + hay.length - query.length)
   return -1
+}
+
+// fzf-style fuzzy matching. Plain substring hits keep their historical bands
+// (7000-12000); fuzzy subsequence hits score strictly below them (0-4900), so
+// "chrom" still ranks "Chromium" above "Church Room" for "chrom".
+var FUZZY_BOUNDARY = " -_./:()[]|\u00b7"
+
+function fuzzyTermScore(hay, term) {
+  var contiguous = substringScore(hay, term)
+  if (contiguous >= 0) return contiguous
+  var n = hay.length
+  var m = term.length
+  if (m > n) return -1
+
+  // Forward scan finds a match end; a backward scan from it tightens the
+  // window start (fzf's v1 trick), so "fx" in "fire fox" binds to "f ... x".
+  var ti = 0
+  var end = -1
+  for (var i = 0; i < n && ti < m; i++) {
+    if (hay.charAt(i) === term.charAt(ti)) {
+      ti += 1
+      if (ti === m) end = i
+    }
+  }
+  if (ti < m) return -1
+  var start = end
+  ti = m - 1
+  for (var j = end; j >= 0 && ti >= 0; j--) {
+    if (hay.charAt(j) === term.charAt(ti)) {
+      ti -= 1
+      if (ti < 0) start = j
+    }
+  }
+
+  var score = 0
+  var previous = -2
+  ti = 0
+  for (var k = start; k <= end; k++) {
+    if (ti < m && hay.charAt(k) === term.charAt(ti)) {
+      var gain = 16
+      if (k === previous + 1) gain += 12
+      if (k === 0 || FUZZY_BOUNDARY.indexOf(hay.charAt(k - 1)) >= 0) gain += 14
+      score += gain
+      previous = k
+      ti += 1
+    } else {
+      score -= 3
+    }
+  }
+  score -= Math.min(start, 20)
+  var slack = Math.min(300, n - m)
+  return Math.max(0, Math.min(4900, 1000 + score * 8 - slack))
+}
+
+// Whole-phrase substring first; otherwise every space-separated term must
+// match (fuzzily) somewhere in the text, like fzf's extended search.
+function fuzzyScore(haystack, needle) {
+  var hay = normalized(haystack)
+  var query = normalized(needle)
+  if (!query) return 0
+  if (!hay) return -1
+  var whole = substringScore(hay, query)
+  if (whole >= 0) return whole
+  var terms = query.split(" ")
+  var total = 0
+  for (var i = 0; i < terms.length; i++) {
+    var termScore = fuzzyTermScore(hay, terms[i])
+    if (termScore < 0) return -1
+    total += termScore
+  }
+  return Math.min(6900, Math.floor(total / terms.length))
 }
 
 function stringList(value) {
@@ -312,7 +393,8 @@ function mappedGlyph(identities, mapping) {
 }
 
 function windowAppGlyph(item, entry) {
-  if (!item || String(item.kind || "") !== "window") return ""
+  var glyphKind = String(item && item.kind || "")
+  if (glyphKind !== "window" && glyphKind !== "browser-tab") return ""
 
   var identities = entryIdentities(entry)
   var glyph = mappedGlyph(identities, APP_GLYPHS)
@@ -461,6 +543,11 @@ function isKindMetadata(value) {
 function contextMetadata(item, breadcrumb) {
   var kind = String(item && item.kind || "")
   var provider = String(item && item.provider || "")
+  // Launcher rows repeat their group heading as a provider label; drop it.
+  if (isSearchOnlyKind(kind)) return ""
+  // A browser tab's host says more than the browser name repeated on every row.
+  if (kind === "browser-tab" && /^[A-Za-z0-9.-]+(:\d+)?$/.test(String(item.context || "")))
+    return String(item.context)
   if (kind === "browser-tab" || kind === "app-tab") return provider
 
   var value = String(breadcrumb || (item && item.context) || "").trim()
@@ -615,7 +702,7 @@ function rankedEntry(item, query, sourceIndex, relations) {
   var quality = 0
 
   if (query) {
-    var titleScore = substringScore(title, query)
+    var titleScore = fuzzyScore(title, query)
     var groupScore = substringScore(group, query)
     if (titleScore >= 0) {
       titleHits = 1
@@ -624,7 +711,17 @@ function rankedEntry(item, query, sourceIndex, relations) {
       groupHits = 1
       quality = groupScore
     } else {
-      return null
+      // Launcher rows (apps, Omarchy menu) also match their keywords, so
+      // "settings" finds Setup and "browser" finds Chrome. Other kinds keep
+      // the strict title-only contract.
+      var keywordScore = -1
+      if (isSearchOnlyKind(item.kind)) {
+        var terms = stringList(item.searchTerms)
+        for (var t = 0; t < terms.length; t++)
+          keywordScore = Math.max(keywordScore, fuzzyScore(terms[t], query))
+      }
+      if (keywordScore < 0) return null
+      quality = Math.floor(keywordScore / 4)
     }
   }
 
@@ -657,12 +754,22 @@ function rank(items, query, hiddenIds, disabledKinds) {
     var item = source[i]
     if (!item || !item.id || hidden[String(item.id)] === true
         || disabled[String(item.kind || "")] === true) continue
+    if (!normalizedQuery && isSearchOnlyKind(item.kind)) continue
     var entry = rankedEntry(item, normalizedQuery, i, relations)
     if (entry) ranked.push(entry)
   }
   ranked.sort(function(a, b) {
     var groupOrder = kindOrder(a.item.kind) - kindOrder(b.item.kind)
     if (groupOrder !== 0) return groupOrder
+    // With a query, substring hits (quality >= 5000) keep the stable
+    // workspace/host ordering and always precede fuzzy subsequence hits; fuzzy
+    // hits order by how well they match, not by where they live.
+    if (normalizedQuery && a.titleHits === 1 && b.titleHits === 1) {
+      var aSubstring = a.quality >= 5000
+      var bSubstring = b.quality >= 5000
+      if (aSubstring !== bSubstring) return aSubstring ? -1 : 1
+      if (!aSubstring && a.quality !== b.quality) return b.quality - a.quality
+    }
     if (a.metadataBucket !== b.metadataBucket)
       return a.metadataBucket - b.metadataBucket
     var metadataOrder = naturalCompare(a.metadata, b.metadata)

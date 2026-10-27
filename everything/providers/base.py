@@ -118,6 +118,11 @@ def route_for_process(
     # would be a guess. This also covers activation before a partial scan has
     # finished.
     internal_names = {"kitty", "ghostty"}
+    # Ghostty pane discovery is opt-in. With no Ghostty surface metadata at all,
+    # window-level routing below is still exact whenever the Ghostty PID owns
+    # exactly one managed window, so only refuse when that cannot be proven.
+    if not context.provider_metadata.get("ghostty", {}).get("surfaces"):
+        internal_names = {"kitty"}
     if any(
         process.comm.lower() in internal_names
         or (process.argv and process.argv[0].rsplit("/", 1)[-1].lower() in internal_names)

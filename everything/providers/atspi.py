@@ -885,9 +885,16 @@ class AtspiProvider:
     def _browser_clients(context: ScanContext) -> dict[tuple[str, int, str], str]:
         out: dict[tuple[str, int, str], str] = {}
         births: dict[int, str] = {}
+        # Chrome exposes no native tab strip over AT-SPI, so waiting for one
+        # burns the whole settle ladder on every scan. The extension owns it.
+        from .chrome_tabs import extension_available, is_chrome_client
+
+        skip_chrome = extension_available()
         for client in context.hypr_clients:
             app_class = str(client.get("class") or client.get("initialClass") or "")
             if not BROWSER_CLASS.search(app_class) or is_browser_app_mode(client):
+                continue
+            if skip_chrome and is_chrome_client(client):
                 continue
             address = normalized_address(client.get("address"))
             pid = int(client.get("pid") or 0)

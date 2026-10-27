@@ -215,7 +215,12 @@ class AtspiRuntimeLease:
         if self.original_enabled is not None:
             return
         self.original_enabled = self.backend.get("IsEnabled")
-        self.original_screen_reader = self.backend.get("ScreenReaderEnabled")
+        # at-spi2-core 2.62 dropped ScreenReaderEnabled from org.a11y.Status.
+        # It is only ever read for restoration bookkeeping, so tolerate absence.
+        try:
+            self.original_screen_reader = self.backend.get("ScreenReaderEnabled")
+        except Exception:
+            self.original_screen_reader = None
         if not self.original_enabled:
             self.backend.set("IsEnabled", True)
             self.changed = True

@@ -29,6 +29,8 @@ Item {
   property bool intentionalStop: false
   property int crashCount: 0
   property var requestQueue: []
+  property var helperRows: []
+  property var localRows: []
 
   // Quattro sanitizes third-party manifests. Resolve co-located code from
   // this component, decoding the file URL before passing it as an argv path.
@@ -52,6 +54,7 @@ Item {
     next[key] = enabled
     leases = next
     leaseCount = Object.keys(next).length
+    refreshLocalRows()
     ensureHelper()
     requestScan(enabled)
   }
@@ -90,6 +93,7 @@ Item {
 
   function activate(item) {
     if (!item || !item.id) return
+    if (item.local) { activateLocal(item); return }
     var token = String(activationTokens[String(item.id)] || item.activationToken || "")
     if (!token) return
     pendingActivations += 1
@@ -156,8 +160,80 @@ Item {
     publishItems(Model.mergeProviderItems(next))
   }
 
+  // Launcher rows come from the shell's AppLibrary and a fixed Omarchy menu
+  // route list, not the helper. Rebuilt on every open so new installs appear.
+  readonly property var menuRoutes: [
+    { id: "apps", title: "Apps", terms: ["launcher", "applications"], argv: ["omarchy-menu", "summon", "apps"] },
+    { id: "learn", title: "Learn", terms: ["help", "docs", "manual"], argv: ["omarchy-menu", "summon", "learn"] },
+    { id: "trigger", title: "Trigger", terms: ["emoji", "capture", "screenshot", "toggle"], argv: ["omarchy-menu", "summon", "trigger"] },
+    { id: "style", title: "Style", terms: ["appearance", "look", "font"], argv: ["omarchy-menu", "summon", "style"] },
+    { id: "style.theme", title: "Style: Theme", terms: ["colors", "colour"], argv: ["omarchy-menu", "summon", "theme"] },
+    { id: "style.background", title: "Style: Background", terms: ["wallpaper"], argv: ["omarchy-menu", "summon", "background"] },
+    { id: "setup", title: "Setup (Settings)", terms: ["settings", "config", "preferences"], argv: ["omarchy-menu", "summon", "setup"] },
+    { id: "install", title: "Install", terms: ["add", "package", "pacman"], argv: ["omarchy-menu", "summon", "install"] },
+    { id: "remove", title: "Remove (Uninstall)", terms: ["uninstall", "delete"], argv: ["omarchy-menu", "summon", "remove"] },
+    { id: "update", title: "Update", terms: ["upgrade", "restart", "refresh"], argv: ["omarchy-menu", "summon", "update"] },
+    { id: "system", title: "System (Power)", terms: ["power", "shutdown", "reboot", "logout"], argv: ["omarchy-menu", "summon", "system"] },
+    { id: "system.lock", title: "System: Lock", terms: ["lock screen"], argv: ["omarchy-system-lock"] },
+    { id: "system.suspend", title: "System: Suspend", argv: ["systemctl", "suspend"] },
+    { id: "system.logout", title: "System: Logout", terms: ["sign out", "log out"], argv: ["omarchy-system-logout"] },
+    { id: "system.reboot", title: "System: Reboot", terms: ["restart"], argv: ["omarchy-system-reboot"] },
+    { id: "system.shutdown", title: "System: Shutdown", terms: ["power off", "turn off"], argv: ["omarchy-system-shutdown"] },
+    { id: "trigger.emoji", title: "Trigger: Emoji", terms: ["emojis", "smiley"], argv: ["omarchy-menu-emoji"] },
+    { id: "learn.keybindings", title: "Learn: Keybindings", terms: ["shortcuts", "hotkeys", "binds"], argv: ["omarchy-menu-keybindings"] }
+  ]
+
+  function refreshLocalRows() {
+    var rows = []
+    var entries = DesktopEntries.applications.values || []
+    for (var i = 0; i < entries.length; i++) {
+      var entry = entries[i]
+      if (!entry || entry.noDisplay) continue
+      var appId = String(entry.id || "")
+      var name = String(entry.name || "")
+      if (!appId || !name) continue
+      rows.push({
+        id: "app:" + appId,
+        kind: "app",
+        provider: "Apps",
+        title: name,
+        iconHints: entry.icon ? [String(entry.icon)] : [],
+        searchTerms: [String(entry.genericName || "")].concat(
+          Array.isArray(entry.keywords) ? entry.keywords.map(String) : []).filter(Boolean),
+        local: { type: "app", appId: appId }
+      })
+    }
+    for (var m = 0; m < menuRoutes.length; m++) {
+      var route = menuRoutes[m]
+      rows.push({
+        id: "omarchy-menu:" + route.id,
+        kind: "omarchy-menu",
+        provider: "Omarchy",
+        title: route.title,
+        iconHints: [],
+        searchTerms: route.terms || [],
+        local: { type: "exec", argv: route.argv }
+      })
+    }
+    localRows = rows
+    publishItems(helperRows)
+  }
+
+  function activateLocal(item) {
+    var action = item.local
+    if (action.type === "app") {
+      var entries = DesktopEntries.applications.values || []
+      for (var i = 0; i < entries.length; i++) {
+        if (String(entries[i].id || "") === action.appId) { entries[i].execute(); break }
+      }
+    } else if (action.type === "exec" && Array.isArray(action.argv)) {
+      Quickshell.execDetached(action.argv)
+    }
+  }
+
   function publishItems(rows) {
-    var incoming = Array.isArray(rows) ? rows : []
+    helperRows = Array.isArray(rows) ? rows : []
+    var incoming = helperRows.concat(localRows)
     var tokens = {}
     for (var i = 0; i < incoming.length; i++) {
       var row = incoming[i]
@@ -291,9 +367,11 @@ Item {
     onTriggered: if (!root.scanning) root.requestScan(false)
   }
 
+  // Keep the helper warm after the panel closes: a cold start costs ~300 ms of
+  // Python and AT-SPI guard startup. It does not poll while idle (no leases).
   Timer {
     id: maybeStopTimer
-    interval: 175
+    interval: 120000
     repeat: false
     onTriggered: root.maybeStop()
   }

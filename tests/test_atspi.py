@@ -98,6 +98,22 @@ class FakeAccessible:
 
 @unittest.skipIf(Atspi is None, "PyGObject AT-SPI is unavailable")
 class NativeTabTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        # Keep the settle tests independent of a Screen Context socket on the host.
+        patcher = patch("everything.providers.chrome_tabs.extension_available", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_chrome_is_not_a_settle_target_when_the_extension_owns_its_tabs(self) -> None:
+        context = ScanContext(
+            runner=CommandRunner(),
+            processes=ProcTable({}),
+            hypr_clients=[{"class": "google-chrome", "address": "0x1", "pid": 1234}],
+        )
+        self.assertEqual(len(AtspiProvider._browser_clients(context)), 1)
+        with patch("everything.providers.chrome_tabs.extension_available", return_value=True):
+            self.assertEqual(AtspiProvider._browser_clients(context), {})
+
     @staticmethod
     def tab(name: str, identifier: str, selected: bool = False) -> FakeAccessible:
         return FakeAccessible(

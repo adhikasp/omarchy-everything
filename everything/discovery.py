@@ -10,6 +10,7 @@ from .model import SnapshotRegistry, TokenError
 from .processes import ProcTable
 from .providers import (
     AtspiProvider,
+    ChromeTabsProvider,
     GhosttyProvider,
     HerdrProvider,
     HyprlandProvider,
@@ -47,6 +48,7 @@ class DiscoveryManager:
                 "tmux": TmuxProvider(),
                 "herdr": HerdrProvider(),
                 "neovim": NeovimProvider(),
+                "chrome": ChromeTabsProvider(),
             }
             if atspi_available:
                 self.atspi_executor = AtspiExecutor()
@@ -117,7 +119,7 @@ class DiscoveryManager:
             await self._emit_full(request_id)
             return
 
-        provider_names = ["atspi", "kitty", "tmux", "herdr", "neovim", "ghostty"]
+        provider_names = ["atspi", "chrome", "kitty", "tmux", "herdr", "neovim", "ghostty"]
         provider_names = [name for name in provider_names if name in self.providers]
 
         async def run_provider(name: str) -> tuple[str, ProviderResult | None, Exception | None]:
