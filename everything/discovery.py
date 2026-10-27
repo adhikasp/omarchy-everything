@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -9,16 +8,7 @@ from .atspi_runtime import AtspiExecutor
 from .commands import CommandError, CommandRunner
 from .model import SnapshotRegistry, TokenError
 from .processes import ProcTable
-from .providers import (
-    AtspiProvider,
-    ChromeTabsProvider,
-    GhosttyProvider,
-    HerdrProvider,
-    HyprlandProvider,
-    KittyProvider,
-    NeovimProvider,
-    TmuxProvider,
-)
+from .providers import AtspiProvider, GhosttyProvider, HyprlandProvider
 from .providers.base import ProviderResult, ScanContext
 
 
@@ -45,11 +35,6 @@ class DiscoveryManager:
         if not test_mode:
             self.providers = {
                 "hyprland": HyprlandProvider(),
-                "kitty": KittyProvider(),
-                "tmux": TmuxProvider(),
-                "herdr": HerdrProvider(),
-                "neovim": NeovimProvider(),
-                "chrome": ChromeTabsProvider(),
             }
             if atspi_available:
                 self.atspi_executor = AtspiExecutor()
@@ -120,12 +105,7 @@ class DiscoveryManager:
             await self._emit_full(request_id)
             return
 
-        provider_names = ["atspi", "chrome", "kitty", "tmux", "herdr", "neovim", "ghostty"]
-        provider_names = [name for name in provider_names if name in self.providers]
-        # The Rust helper runs AT-SPI and Ghostty here as a sidecar and owns the rest.
-        only = {n for n in os.environ.get("EVERYTHING_ONLY_PROVIDERS", "").split(",") if n}
-        if only:
-            provider_names = [name for name in provider_names if name in only]
+        provider_names = [name for name in ("atspi", "ghostty") if name in self.providers]
 
         async def run_provider(name: str) -> tuple[str, ProviderResult | None, Exception | None]:
             try:
@@ -144,19 +124,6 @@ class DiscoveryManager:
                     continue
                 assert result is not None
                 await self._publish_partial(request_id, result)
-
-            # Neovim scans concurrently for responsiveness, then makes one
-            # cheap second RPC after container metadata arrives so breadcrumbs
-            # and activation routes never guess a host.
-            if "neovim" in provider_names:
-                try:
-                    context.processes = ProcTable.read()
-                    result = await self.providers["neovim"].scan(context)
-                    await self._publish_partial(request_id, result)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as error:
-                    await self._publish_failure(request_id, "neovim", error)
         finally:
             for task in tasks:
                 if not task.done():
@@ -342,11 +309,7 @@ class DiscoveryManager:
         return {
             "atspi": "AT-SPI tabs",
             "hyprland": "Hyprland",
-            "kitty": "Kitty",
             "ghostty": "Ghostty",
-            "tmux": "tmux",
-            "herdr": "Herdr",
-            "neovim": "Neovim",
         }.get(provider, provider)
 
 

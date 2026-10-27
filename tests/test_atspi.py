@@ -100,7 +100,7 @@ class FakeAccessible:
 class NativeTabTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self) -> None:
         # Keep the settle tests independent of a Screen Context socket on the host.
-        patcher = patch("everything.providers.chrome_tabs.extension_available", return_value=False)
+        patcher = patch("everything.providers.atspi._chrome_extension_available", return_value=False)
         patcher.start()
         self.addCleanup(patcher.stop)
 
@@ -111,7 +111,7 @@ class NativeTabTests(unittest.IsolatedAsyncioTestCase):
             hypr_clients=[{"class": "google-chrome", "address": "0x1", "pid": 1234}],
         )
         self.assertEqual(len(AtspiProvider._browser_clients(context)), 1)
-        with patch("everything.providers.chrome_tabs.extension_available", return_value=True):
+        with patch("everything.providers.atspi._chrome_extension_available", return_value=True):
             self.assertEqual(AtspiProvider._browser_clients(context), {})
 
     @staticmethod

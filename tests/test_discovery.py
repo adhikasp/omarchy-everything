@@ -34,7 +34,7 @@ class StaticProvider:
 
 
 class SlowProvider:
-    name = "kitty"
+    name = "atspi"
 
     def __init__(self) -> None:
         self.started = asyncio.Event()
@@ -120,25 +120,25 @@ class DiscoveryTests(unittest.IsolatedAsyncioTestCase):
                 "hyprland",
                 ProviderResult("hyprland", [thing("hyprland", "outer")]),
             ),
-            "kitty": StaticProvider(
-                "kitty", ProviderResult("kitty", [thing("kitty", "pane")])
+            "atspi": StaticProvider(
+                "atspi", ProviderResult("atspi", [thing("atspi", "pane")])
             ),
-            "tmux": StaticProvider("tmux", error=RuntimeError("socket changed")),
+            "ghostty": StaticProvider("ghostty", error=RuntimeError("socket changed")),
         }
-        manager.registry.publish("tmux", [thing("tmux", "old")])
+        manager.registry.publish("ghostty", [thing("ghostty", "old")])
 
         await manager.scan("scan-1", include_ghostty=False)
 
         partials = [message for message in messages if message.get("type") == "snapshot" and not message["full"]]
         self.assertEqual(partials[0]["provider"], "hyprland", "managed windows publish first")
-        self.assertIn("kitty", {message["provider"] for message in partials})
-        tmux_partial = next(message for message in partials if message["provider"] == "tmux")
-        self.assertEqual(tmux_partial["items"], [], "failed providers drop stale internal rows")
+        self.assertIn("atspi", {message["provider"] for message in partials})
+        ghostty_partial = next(message for message in partials if message["provider"] == "ghostty")
+        self.assertEqual(ghostty_partial["items"], [], "failed providers drop stale internal rows")
         error = next(message for message in messages if message.get("type") == "error")
         self.assertTrue(error["nonfatal"])
         full = [message for message in messages if message.get("full") is True][-1]
         self.assertEqual(full["requestId"], "scan-1")
-        self.assertEqual({row["id"] for row in full["items"]}, {"hyprland:outer", "kitty:pane"})
+        self.assertEqual({row["id"] for row in full["items"]}, {"hyprland:outer", "atspi:pane"})
 
     async def test_scan_cancellation_reaches_provider_tasks(self) -> None:
         async def emit(_message: dict) -> None:
@@ -148,7 +148,7 @@ class DiscoveryTests(unittest.IsolatedAsyncioTestCase):
         manager = DiscoveryManager(emit, atspi_available=False)
         manager.providers = {
             "hyprland": StaticProvider("hyprland", ProviderResult("hyprland")),
-            "kitty": slow,
+            "atspi": slow,
         }
         task = asyncio.create_task(manager.scan("cancelled", include_ghostty=False))
         await asyncio.wait_for(slow.started.wait(), 1.0)

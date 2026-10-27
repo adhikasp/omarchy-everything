@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """QML transport fixture: record requests without touching the live desktop."""
 
 import json

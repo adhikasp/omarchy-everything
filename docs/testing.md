@@ -10,7 +10,8 @@ tests/all.sh
 
 The suite performs:
 
-- Python compilation and 30+ unit/protocol tests;
+- Rust unit tests (`cargo test`), Python compilation and unit/protocol tests for
+  the AT-SPI/Ghostty sidecar;
 - case-insensitive contiguous-substring ranking over titles and displayed group
   names only, rejection of subsequences and cross-field queries, explicit
   exclusion of context/provider/badges/search terms, stable kind grouping,

@@ -96,7 +96,7 @@ ShellRoot {
   function refreshTestTick() {
     if (refreshTestStage === 0) {
       if (!serviceObject.helperReady) return
-      if (serviceObject.helperPath !== sourceDir + "/helper/everything_helper.py") {
+      if (serviceObject.helperPath !== sourceDir + "/rust/target/release/everything-helper") {
         failRefreshTest("helper path did not decode the component's file URL")
         return
       }

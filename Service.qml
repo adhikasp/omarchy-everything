@@ -4,7 +4,7 @@ import Quickshell.Io
 import "EverythingModel.js" as Model
 
 // Shell-wide state and helper lifecycle. Bar instances acquire a lease only
-// while their results mode is open. The Python helper therefore exists only
+// while their results mode is open. The helper process therefore exists only
 // while at least one panel needs discovery, or an activation is still in
 // flight; the shell-only group checklist does not start it.
 Item {
@@ -35,7 +35,7 @@ Item {
   // Quattro sanitizes third-party manifests. Resolve co-located code from
   // this component, decoding the file URL before passing it as an argv path.
   readonly property string helperPath: decodeURIComponent(
-    String(Qt.resolvedUrl("helper/everything_helper.py")).replace(/^file:\/\//, ""))
+    String(Qt.resolvedUrl("rust/target/release/everything-helper")).replace(/^file:\/\//, ""))
   readonly property bool ghosttyPaletteEnabled: Object.keys(leases).some(function(key) {
     return leases[key] === true
   })
@@ -128,12 +128,7 @@ Item {
   function ensureHelper() {
     if (helper.running || !helperPath) return
     intentionalStop = false
-    // Prefer the Rust helper (~1 ms cold start); fall back to the Python one,
-    // which also covers AT-SPI, Ghostty, Kitty, tmux and Neovim.
-    helper.command = ["sh", "-c",
-      'rust="${1%/helper/everything_helper.py}/rust/target/release/everything-helper"; ' +
-      '[ -x "$rust" ] && exec "$rust" --json-lines; exec python3 "$1" --json-lines',
-      "everything-helper", helperPath]
+    helper.command = [helperPath, "--json-lines"]
     helper.running = true
   }
 
@@ -358,7 +353,7 @@ Item {
         root.notifyFailure("Everything stopped before it could focus the thing")
       if (root.leaseCount > 0 || root.pendingActivations > 0) {
         root.crashCount += 1
-        root.appendWarning("Everything helper stopped unexpectedly (exit " + exitCode + ")")
+        root.appendWarning("Everything helper stopped unexpectedly (exit " + exitCode + "); is it built? cd rust && cargo build --release")
         if (root.crashCount <= 3) restartTimer.restart()
       }
     }
@@ -372,8 +367,8 @@ Item {
     onTriggered: if (!root.scanning) root.requestScan(false)
   }
 
-  // Keep the helper warm after the panel closes: a cold start costs ~300 ms of
-  // Python and AT-SPI guard startup. It does not poll while idle (no leases).
+  // Keep the helper warm after the panel closes: a cold start still costs a
+  // scan. It does not poll while idle (no leases).
   Timer {
     id: maybeStopTimer
     interval: 120000

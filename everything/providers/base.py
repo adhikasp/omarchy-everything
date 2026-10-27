@@ -80,7 +80,7 @@ def route_for_process(
     ancestors = context.processes.ancestors(pid)
     ancestor_pids = {process.pid for process in ancestors}
 
-    for provider_name in ("kitty", "ghostty"):
+    for provider_name in ("ghostty",):
         all_surfaces = context.provider_metadata.get(provider_name, {}).get("surfaces", [])
         process_surfaces = [
             surface
@@ -117,12 +117,12 @@ def route_for_process(
     # provider has no current metadata, treating the outer window as its pane
     # would be a guess. This also covers activation before a partial scan has
     # finished.
-    internal_names = {"kitty", "ghostty"}
+    internal_names = {"ghostty"}
     # Ghostty pane discovery is opt-in. With no Ghostty surface metadata at all,
     # window-level routing below is still exact whenever the Ghostty PID owns
     # exactly one managed window, so only refuse when that cannot be proven.
     if not context.provider_metadata.get("ghostty", {}).get("surfaces"):
-        internal_names = {"kitty"}
+        internal_names = set()
     if any(
         process.comm.lower() in internal_names
         or (process.argv and process.argv[0].rsplit("/", 1)[-1].lower() in internal_names)

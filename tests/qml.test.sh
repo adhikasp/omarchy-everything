@@ -34,10 +34,11 @@ cp -- "$ROOT_DIR/tests/fixtures/qml-entrypoints/KeyboardPanel.qml" \
 # Exercise QML-relative, decoded helper paths with a public-only manifest.
 # The helper is a transport fixture so opening results never probes live apps.
 PLUGIN_TMP="$RUNTIME_TMP/plugin space # % café"
-mkdir -p -- "$PLUGIN_TMP/helper"
+mkdir -p -- "$PLUGIN_TMP/rust/target/release"
 cp -- "$ROOT_DIR/Service.qml" "$ROOT_DIR/Everything.qml" \
   "$ROOT_DIR/EverythingModel.js" "$PLUGIN_TMP/"
-cp -- "$ROOT_DIR/tests/fixtures/qml-entrypoints/everything_helper.py" "$PLUGIN_TMP/helper/"
+install -m 755 -- "$ROOT_DIR/tests/fixtures/qml-entrypoints/everything_helper.py" \
+  "$PLUGIN_TMP/rust/target/release/everything-helper"
 
 env \
   QT_QPA_PLATFORM=offscreen \

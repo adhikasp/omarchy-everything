@@ -1,8 +1,11 @@
 # Architecture
 
-Everything has a small QML presentation layer and a leased Python discovery
-helper. The hard boundary between them is the versioned JSON-lines protocol.
-Native integrations remain behind provider adapters.
+Everything has a small QML presentation layer and a leased Rust discovery
+helper (`rust/`). The hard boundary between them is the versioned JSON-lines
+protocol. Native integrations remain behind provider adapters. AT-SPI and
+Ghostty live in a small Python sidecar (`helper/`, `everything/`) that the Rust
+helper starts only while a window that needs it is open; it speaks the same
+protocol and the Rust helper relays its rows.
 
 ## System shape
 
@@ -223,7 +226,7 @@ Three identities serve different boundaries:
 | `uiUuid` | Deterministic UI reconciliation identity | Same stable traits |
 | `activationToken` | Authenticated reference to private activation data | Helper process and provider generation |
 
-Raw activation dictionaries stay in Python. The registry authenticates tokens,
+Raw activation dictionaries stay in the helper (Rust, or the Python sidecar for its own rows). The registry authenticates tokens,
 rejects stale generations, revalidates the native target, and permits exactly
 one same-ID refresh/retry. Titles and other presentation text are never
 activation identities.

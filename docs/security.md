@@ -34,8 +34,9 @@ The helper may execute only these command families:
   `omarchy-launch-terminal nvim --server <socket> --remote-ui`.
 - `$OMARCHY_PATH/bin/omarchy-notification-send --app-name Everything …` after
   a stale or failed user activation.
-- `python3 <plugin>/helper/everything_helper.py --json-lines` and its private
-  `--atspi-guard <parent-pid>` child.
+- `<plugin>/rust/target/release/everything-helper --json-lines`, and from it the
+  AT-SPI/Ghostty sidecar `python3 <plugin>/helper/everything_helper.py --json-lines`
+  with its private `--atspi-guard <parent-pid>` child.
 
 Arguments derived from titles, paths, sockets, or native IDs remain individual
 argv fields. The fixed Neovim expression receives only a validated integer

@@ -1,6 +1,6 @@
 import json, subprocess, sys, time, statistics as st
 H="/home/adhikasp/Workspace/omarchy-everything"
-CMDS={"python":["python3",H+"/helper/everything_helper.py","--json-lines"],"rust":[H+"/rust/target/release/everything-helper","--json-lines"]}
+CMD=[H+"/rust/target/release/everything-helper","--json-lines"]
 def once(cmd):
     t0=time.perf_counter()
     p=subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True,bufsize=1)
@@ -19,10 +19,8 @@ def once(cmd):
     rss=int(open(f"/proc/{p.pid}/status").read().split("VmRSS:")[1].split()[0]); m["rss_mb"]=rss/1024/1000*1000/1000*1000/1000 if False else rss/1024
     p.stdin.close(); p.wait(5); return m
 N=int(sys.argv[1]) if len(sys.argv)>1 else 15
-res={k:[once(c) for _ in range(N)] for k,c in CMDS.items()}
+res=[once(CMD) for _ in range(N)]
 keys=["ready","cold_total_to_full","first_rows_after_scan","warm_first_rows","warm_full_scan","rss_mb"]
-print(f"{'metric':24s}{'python':>12s}{'rust':>12s}{'speedup':>9s}")
 for k in keys:
-    a=st.median(r[k] for r in res["python"]); b=st.median(r[k] for r in res["rust"])
     u=1 if k=="rss_mb" else 1000
-    print(f"{k:24s}{a*u:12.1f}{b*u:12.1f}{a/b:8.1f}x")
+    print(f"{k:24s}{st.median(r[k] for r in res)*u:10.1f}")

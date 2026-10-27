@@ -29,14 +29,14 @@ An [Omarchy](https://omarchy.org) plugin, now with a Rust engine that starts in 
 
 ## Fast
 
-The helper that gathers everything is a small Rust binary. Numbers from this fork, median of 15 runs on a Ryzen 5 5560U:
+The helper that gathers everything is a small Rust binary. The original Python helper took 325 ms to start and 486 ms for a cold scan, and used 37 MB. Numbers from this fork, median of 15 runs on a Ryzen 5 5560U:
 
-| | Python helper | Rust helper |
-|---|---:|---:|
-| Process start → ready | 325 ms | **1.3 ms** |
-| Cold start → full scan | 486 ms | **17.5 ms** |
-| Warm full scan | 157 ms | **15 ms** |
-| Memory (RSS) | 37 MB | **4 MB** |
+| | |
+|---|---:|
+| Process start → ready | **1.3 ms** |
+| Cold start → full scan | **17.5 ms** |
+| Warm full scan | **15 ms** |
+| Memory (RSS) | **4 MB** |
 
 Super+Space reaches the panel through a Hyprland global shortcut instead of spawning `qs ipc`, which is about 12 ms rather than 55 ms. The helper stays warm for two minutes after you close the panel, so reopening is instant.
 
@@ -53,7 +53,7 @@ cd ~/.config/omarchy/plugins/b.everything/rust && cargo build --release
 omarchy restart shell
 ```
 
-Without the binary, the plugin falls back to the original Python helper, so nothing breaks if you skip the build.
+The build step is required: the plugin has no other helper.
 
 ## Open it
 
@@ -105,15 +105,14 @@ Ghostty windows and tabs are on by default. Ghostty *pane* discovery is opt-in b
 
 ## Under the hood
 
-The QML UI talks to a helper over a small versioned JSON-lines protocol. Two interchangeable helpers speak it:
+The QML UI talks to a Rust helper over a small versioned JSON-lines protocol:
 
-- **Rust** (`rust/`): Hyprland, Chrome, Herdr, Kitty, tmux and Neovim, natively. It starts the Python helper as a sidecar only while a window that needs AT-SPI or Ghostty is open.
-- **Python** (`helper/`, `everything/`): the original implementation, still the fallback and the home of AT-SPI and Ghostty.
+- **Rust** (`rust/`): Hyprland, Chrome, Herdr, Kitty, tmux and Neovim, natively.
+- **Python sidecar** (`helper/`, `everything/`): AT-SPI (Nautilus, Pinta, other browsers) and Ghostty, because libatspi has no Rust binding worth porting. The Rust helper starts it only while a window that needs it is open.
 
 ```sh
 cd rust && cargo build --release
-python3 rust/tools/parity.py   # Rust and Python must return identical rows
-python3 rust/tools/bench.py    # cold start and scan timings, both helpers
+python3 rust/tools/bench.py    # cold start and scan timings
 ```
 
 More in [`docs/`](docs): [architecture](docs/architecture.md), [protocol](docs/protocol.md), [providers](docs/providers.md), [security](docs/security.md), [testing](docs/testing.md). Kitty support is ported but untested here, because Kitty isn't installed on the dev machine.
