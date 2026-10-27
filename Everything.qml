@@ -4,6 +4,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Effects
 import Quickshell
+import Quickshell.Hyprland
 import qs.Commons
 import qs.Ui
 import "EverythingModel.js" as Model
@@ -13,6 +14,15 @@ Panel {
   moduleName: "b.everything"
   ipcTarget: "b.everything"
   manageIpc: false
+
+  // Hyprland delivers this straight into the running shell. The IPC route
+  // (`omarchy-shell shell toggle`) spawns a whole Qt process, ~55 ms per press.
+  GlobalShortcut {
+    appid: "omarchy-everything"
+    name: "toggle"
+    description: "Toggle Everything"
+    onPressed: root.toggle()
+  }
 
   readonly property var everythingService: root.bar && root.bar.shell
     && typeof root.bar.shell.serviceFor === "function"
