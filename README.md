@@ -1,81 +1,132 @@
-# Everything
-List, search, and jump directly to every app, tab, buffer, agent... everything. An Omarchy plugin.
+<div align="center">
 
-![Everything screenshot](preview.png)
-![Another Everything screenshot](preview2.png)
-![Screenshot demonstrating search](preview3.png)
-![Settings panel](preview4.png)
+# Everything
+
+**One keystroke. Every window, tab, terminal, editor buffer and AI agent on your desktop.**<br>
+Type a few letters, hit <kbd>Enter</kbd>, and you're there.
+
+An [Omarchy](https://omarchy.org) plugin, now with a Rust engine that starts in **~1 ms**.
+
+<img src="docs/media/demo.gif" alt="Everything opening instantly, filtering to Hacker News as you type 'hack', then to a running agent with 'auth'" width="760">
+
+</div>
+
+---
+
+## Why you'll like it
+
+- **Everything in one list.** Windows, Chrome tabs, Herdr workspaces and agents, tmux, Kitty, Neovim buffers, apps and the Omarchy menu. No more *"which workspace was that on?"*
+- **Jump, don't launch.** Picking a result focuses the exact window, switches to the exact tab, or lands on the exact agent pane. It never opens a duplicate.
+- **Fuzzy and fast.** fzf-style matching, so `hck` finds *Hacker News* and `auth` finds the agent refactoring your auth middleware. <kbd>Enter</kbd> takes the top hit.
+- **Keyboard first.** Vim keys, <kbd>Ctrl</kbd>+<kbd>N</kbd>/<kbd>P</kbd>, <kbd>/</kbd> to search, <kbd>X</kbd> to hide noise.
+- **Feels native.** A 45 ms fade, centered card, and the Omarchy theme.
+
+<p align="center">
+  <img src="docs/media/overview.png" alt="Everything showing windows, browser tabs, agents and workspaces in one list" width="46%">
+  &nbsp;
+  <img src="docs/media/search.png" alt="Searching for 'hack' narrows the list to matching browser tabs" width="46%">
+</p>
+
+## Fast
+
+The helper that gathers everything is a small Rust binary. Numbers from this fork, median of 15 runs on a Ryzen 5 5560U:
+
+| | Python helper | Rust helper |
+|---|---:|---:|
+| Process start → ready | 325 ms | **1.3 ms** |
+| Cold start → full scan | 486 ms | **17.5 ms** |
+| Warm full scan | 157 ms | **15 ms** |
+| Memory (RSS) | 37 MB | **4 MB** |
+
+Super+Space reaches the panel through a Hyprland global shortcut instead of spawning `qs ipc`, which is about 12 ms rather than 55 ms. The helper stays warm for two minutes after you close the panel, so reopening is instant.
 
 ## Install
 
+This is a fork of [`brianblakely/omarchy-everything`](https://github.com/brianblakely/omarchy-everything) that adds the Rust helper, fuzzy search and a faster open path.
+
 ```bash
-omarchy plugin add https://github.com/brianblakely/omarchy-everything.git --enable --yes
+omarchy plugin add https://github.com/adhikasp/omarchy-everything.git --enable --yes
+
+# build the Rust helper (needs a Rust toolchain; ~10 s)
+cd ~/.config/omarchy/plugins/b.everything/rust && cargo build --release
+
+omarchy restart shell
 ```
 
-## Open
+Without the binary, the plugin falls back to the original Python helper, so nothing breaks if you skip the build.
 
-Click the arrow in the bar, or use a binding:
+## Open it
+
+Click the arrow in the bar, or bind a key. For the fastest open, use the global shortcut in `~/.config/hypr/bindings.lua`:
 
 ```lua
-hl.unbind("SUPER + SLASH")
-o.bind("SUPER + SLASH", "Everything", "omarchy-shell shell toggle b.everything")
+hl.unbind("SUPER + SPACE")
+hl.bind("SUPER + SPACE", hl.dsp.global("omarchy-everything:toggle"), { description = "Everything" })
 ```
+
+Prefer the stock route? This works too, just a few tens of ms slower:
+
+```lua
+o.bind("SUPER + SPACE", "Everything", "omarchy-shell shell toggle b.everything")
+```
+
+## What it finds
+
+| Source | Finds | Activation |
+|---|---|---|
+| Hyprland | Every window, on every workspace | Focus the window |
+| Chrome | Every tab (via the Screen Context extension) | Switch to the tab |
+| Herdr | Sessions, workspaces, tabs, panes, agents | Focus the pane |
+| tmux, Kitty | Sessions, windows, panes | Focus the pane |
+| Neovim | Open buffers | Jump to the buffer |
+| Apps, Omarchy menu | Installed apps and menu entries | Search-only, launched on match |
+| Nautilus, Pinta, other browsers, Ghostty | Via AT-SPI | Focus the item |
 
 ## Configure
 
-Right-click the bar icon to choose which groups appear in Everything.
+Right-click the bar icon to choose which groups appear.
 
-### Ghostty Panes
+<img src="docs/media/settings.png" alt="Settings panel with a toggle per group" width="360">
 
-Ghostty windows and tabs are available by default, but Ghostty pane discovery must be enabled manually, as it has wonky behavior where it opens Ghostty's command
-palette.
+Ghostty windows and tabs are on by default. Ghostty *pane* discovery is opt-in because Ghostty opens its command palette to enumerate them.
 
-## Update
+## Keyboard
 
-```bash
-omarchy plugin update b.everything
+| Keys | Action |
+|---|---|
+| <kbd>J</kbd> <kbd>K</kbd> / <kbd>↓</kbd> <kbd>↑</kbd>, <kbd>Ctrl</kbd>+<kbd>N</kbd> <kbd>P</kbd> | Move through results |
+| <kbd>H</kbd> <kbd>L</kbd> / <kbd>←</kbd> <kbd>→</kbd> | Collapse or expand a group |
+| <kbd>g</kbd> <kbd>G</kbd>, <kbd>Home</kbd> <kbd>End</kbd> | Top or bottom |
+| <kbd>Ctrl</kbd>+<kbd>U</kbd> <kbd>D</kbd>, <kbd>PgUp</kbd> <kbd>PgDn</kbd> | Page up or down |
+| <kbd>Enter</kbd> | Activate the highlighted result (the top hit while searching) |
+| <kbd>/</kbd>, <kbd>Tab</kbd> | Focus search, or switch between search and list |
+| <kbd>X</kbd>, <kbd>Backspace</kbd>, <kbd>Delete</kbd> | Hide the highlighted result until restart |
+| <kbd>Esc</kbd> | Clear the search, then close |
+
+## Under the hood
+
+The QML UI talks to a helper over a small versioned JSON-lines protocol. Two interchangeable helpers speak it:
+
+- **Rust** (`rust/`): Hyprland, Chrome, Herdr, Kitty, tmux and Neovim, natively. It starts the Python helper as a sidecar only while a window that needs AT-SPI or Ghostty is open.
+- **Python** (`helper/`, `everything/`): the original implementation, still the fallback and the home of AT-SPI and Ghostty.
+
+```sh
+cd rust && cargo build --release
+python3 rust/tools/parity.py   # Rust and Python must return identical rows
+python3 rust/tools/bench.py    # cold start and scan timings, both helpers
 ```
 
-## Uninstall
+More in [`docs/`](docs): [architecture](docs/architecture.md), [protocol](docs/protocol.md), [providers](docs/providers.md), [security](docs/security.md), [testing](docs/testing.md). Kitty support is ported but untested here, because Kitty isn't installed on the dev machine.
+
+## Update and uninstall
 
 ```bash
+omarchy plugin update b.everything   # then rebuild rust/ if the source changed
 omarchy plugin remove b.everything
 ```
 
-## Keyboard Controls
+## Credits
 
-| Focus | Keys | Action |
-|---|---|---|
-| Navigation | `K`, `Up` | Scroll up |
-| Navigation | `J`, `Down` | Scroll down |
-| Navigation | `H`, `Left` | Collapse the current group |
-| Navigation | `L`, `Right` | Expand the current group |
-| Navigation | `Home`, `End`, `g`, `G` | Scroll to top or bottom, respectively |
-| Navigation | `Page Up`, `Page Down`, `Ctrl+U`, `Ctrl+D` | Move one page |
-| Navigation | `Ctrl+P`, `Ctrl+N` | Move to the previous or next thing |
-| Navigation | `Enter`, `Space` | Expand a collapsed group, or close Everything and activate the highlighted thing |
-| Navigation | `/` | Focus the search field |
-| Navigation | `X`, `Backspace`, `Delete` | Hide the highlighted thing from the list until restart |
-| Navigation | `Tab`, `Shift+Tab` | Switch between search and the list |
-| Search | `Down`, `Tab` | Switch to list |
-| Settings panel | `Enter`, `Space` | Show or hide the selected group in results |
-| Other | `Escape` | Clear a search / Close Everything |
+Built on [`brianblakely/omarchy-everything`](https://github.com/brianblakely/omarchy-everything). MIT licensed.
 
-## Rust helper (fork)
-
-`rust/` is a drop-in replacement for the Python helper over the same
-JSON-lines protocol (see `docs/protocol.md`). `Service.qml` runs
-`rust/target/release/everything-helper` when it exists and falls back to the
-Python helper otherwise.
-
-```sh
-cd rust && cargo build --release   # ~10 s, ~1 MB binary
-python3 rust/tools/parity.py       # Rust vs Python rows must be identical
-python3 rust/tools/bench.py        # cold start / scan timings, both helpers
-```
-
-Hyprland, Chrome (Screen Context extension), Herdr, Kitty, tmux and Neovim are
-native Rust. AT-SPI and Ghostty keep using libatspi through the Python helper,
-which the Rust helper starts as a sidecar (`EVERYTHING_ONLY_PROVIDERS`) only
-while a window that needs it is open (a non-Chrome browser, Nautilus, Pinta, or
-a Ghostty pane request). Kitty is ported but untested here (not installed).
+<sub>The screenshots and GIF use fictional demo data, not a real desktop.</sub>
