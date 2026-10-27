@@ -128,7 +128,12 @@ Item {
   function ensureHelper() {
     if (helper.running || !helperPath) return
     intentionalStop = false
-    helper.command = ["python3", helperPath, "--json-lines"]
+    // Prefer the Rust helper (~1 ms cold start); fall back to the Python one,
+    // which also covers AT-SPI, Ghostty, Kitty, tmux and Neovim.
+    helper.command = ["sh", "-c",
+      'rust="${1%/helper/everything_helper.py}/rust/target/release/everything-helper"; ' +
+      '[ -x "$rust" ] && exec "$rust" --json-lines; exec python3 "$1" --json-lines',
+      "everything-helper", helperPath]
     helper.running = true
   }
 

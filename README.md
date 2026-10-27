@@ -60,3 +60,22 @@ omarchy plugin remove b.everything
 | Search | `Down`, `Tab` | Switch to list |
 | Settings panel | `Enter`, `Space` | Show or hide the selected group in results |
 | Other | `Escape` | Clear a search / Close Everything |
+
+## Rust helper (fork)
+
+`rust/` is a drop-in replacement for the Python helper over the same
+JSON-lines protocol (see `docs/protocol.md`). `Service.qml` runs
+`rust/target/release/everything-helper` when it exists and falls back to the
+Python helper otherwise.
+
+```sh
+cd rust && cargo build --release   # ~10 s, ~1 MB binary
+python3 rust/tools/parity.py       # Rust vs Python rows must be identical
+python3 rust/tools/bench.py        # cold start / scan timings, both helpers
+```
+
+Hyprland, Chrome (Screen Context extension), Herdr, Kitty, tmux and Neovim are
+native Rust. AT-SPI and Ghostty keep using libatspi through the Python helper,
+which the Rust helper starts as a sidecar (`EVERYTHING_ONLY_PROVIDERS`) only
+while a window that needs it is open (a non-Chrome browser, Nautilus, Pinta, or
+a Ghostty pane request). Kitty is ported but untested here (not installed).

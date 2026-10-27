@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -121,6 +122,10 @@ class DiscoveryManager:
 
         provider_names = ["atspi", "chrome", "kitty", "tmux", "herdr", "neovim", "ghostty"]
         provider_names = [name for name in provider_names if name in self.providers]
+        # The Rust helper runs AT-SPI and Ghostty here as a sidecar and owns the rest.
+        only = {n for n in os.environ.get("EVERYTHING_ONLY_PROVIDERS", "").split(",") if n}
+        if only:
+            provider_names = [name for name in provider_names if name in only]
 
         async def run_provider(name: str) -> tuple[str, ProviderResult | None, Exception | None]:
             try:
