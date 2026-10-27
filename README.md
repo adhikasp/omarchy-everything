@@ -80,7 +80,6 @@ o.bind("SUPER + SPACE", "Everything", "omarchy-shell shell toggle b.everything")
 | tmux, Kitty | Sessions, windows, panes | Focus the pane |
 | Neovim | Open buffers | Jump to the buffer |
 | Apps, Omarchy menu | Installed apps and menu entries | Search-only, launched on match |
-| Nautilus, Pinta, other browsers, Ghostty | Via AT-SPI | Focus the item |
 
 ## Configure
 
@@ -88,7 +87,7 @@ Right-click the bar icon to choose which groups appear.
 
 <img src="docs/media/settings.png" alt="Settings panel with a toggle per group" width="360">
 
-Ghostty windows and tabs are on by default. Ghostty *pane* discovery is opt-in because Ghostty opens its command palette to enumerate them.
+Ghostty, Foot and Alacritty windows are listed as ordinary windows. Tabs and panes inside them are not enumerated.
 
 ## Keyboard
 
@@ -105,10 +104,7 @@ Ghostty windows and tabs are on by default. Ghostty *pane* discovery is opt-in b
 
 ## Under the hood
 
-The QML UI talks to a Rust helper over a small versioned JSON-lines protocol:
-
-- **Rust** (`rust/`): Hyprland, Chrome, Herdr, Kitty, tmux and Neovim, natively.
-- **Python sidecar** (`helper/`, `everything/`): AT-SPI (Nautilus, Pinta, other browsers) and Ghostty, because libatspi has no Rust binding worth porting. The Rust helper starts it only while a window that needs it is open.
+The QML UI talks to a Rust helper over a small versioned JSON-lines protocol. Hyprland, Chrome, Herdr, Kitty, tmux and Neovim are read natively in Rust, with no runtime other than the binary itself.
 
 ```sh
 cd rust && cargo build --release

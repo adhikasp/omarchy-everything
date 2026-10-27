@@ -111,7 +111,7 @@ fn route(ctx: &Context, pid: i64, process_cwd: &str, terminal_title: &str) -> (V
         return (remote(), String::new(), false);
     }
 
-    for provider in ["kitty", "ghostty"] {
+    for provider in ["kitty"] {
         let surfaces: Vec<Value> = ctx.meta_list(provider, "surfaces").into_iter().filter(|s| num(s, "pid") != 0 && ctx.procs.is_descendant(pid, num(s, "pid"))).collect();
         if surfaces.is_empty() {
             continue;
@@ -124,7 +124,7 @@ fn route(ctx: &Context, pid: i64, process_cwd: &str, terminal_title: &str) -> (V
         if matches.len() == 1 {
             return (json!({"provider": provider, "activation": matches[0].get("activation").cloned().unwrap_or(json!({}))}), text(matches[0], "item_id"), false);
         }
-        return (remote(), String::new(), provider == "ghostty");
+        return (remote(), String::new(), false);
     }
 
     if let Some(ancestor) = ctx.procs.ancestor_pid_in(pid, &ctx.managed_pids()) {

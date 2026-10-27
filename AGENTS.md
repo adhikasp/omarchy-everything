@@ -13,7 +13,7 @@ Follow the linked document for the boundary you are changing.
 - [Provider behavior](docs/providers.md) — discovery and activation guarantees
   for each supported application or container.
 - [Security and runtime access](docs/security.md) — subprocesses, sockets,
-  `/proc`, AT-SPI, synthetic input, trust checks, and persistence limits.
+  `/proc`, local sockets, trust checks, and persistence limits.
 - [Testing](docs/testing.md) — automated coverage, fixtures, smoke tests, and
   the manual acceptance matrix.
 - [README](README.md) — user-facing behavior, installation, controls, and
@@ -27,11 +27,8 @@ Follow the linked document for the boundary you are changing.
 | Per-monitor panel, focus, and list state | `Everything.qml` | Architecture, Testing |
 | Pure ranking and reconciliation | `EverythingModel.js` | Architecture, Protocol |
 | Shell-wide leases, helper process, and partial merges | `Service.qml` | Architecture, Protocol |
-| Helper process, scan orchestration, activation retry, native providers | `rust/src/` | Architecture, Protocol, Providers |
-| AT-SPI and Ghostty sidecar (Python) | `helper/everything_helper.py`, `everything/server.py`, `everything/discovery.py` | Protocol, Security |
-| Thing identity and opaque tokens | `everything/model.py` | Architecture, Protocol |
-| Sidecar adapters (AT-SPI, Ghostty, Hyprland context) | `everything/providers/` | Providers, Security |
-| AT-SPI, commands, and process metadata | `everything/atspi_runtime.py`, `everything/commands.py`, `everything/processes.py` | Security |
+| Helper process, scan orchestration, activation retry, native providers, process metadata | `rust/src/` | Architecture, Protocol, Providers, Security |
+| Thing identity and opaque tokens | `rust/src/model.rs` | Architecture, Protocol |
 | Automated and live verification | `tests/` | Testing |
 
 ## Working rules

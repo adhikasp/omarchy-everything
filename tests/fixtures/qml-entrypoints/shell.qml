@@ -460,49 +460,9 @@ ShellRoot {
       closeResultsButton.triggerPress(Qt.RightButton)
       widgetObject.setGroupChecklistIndex(widgetObject.checklistEntries.length - 1)
     } else if (refreshTestStage === 20) {
-      var paletteRow = findNamed(widgetObject, "everything-setting-ghosttyPalette")
-      if (!paletteRow || paletteRow.checked || widgetPeer.ghosttyPaletteEnabled) {
-        failRefreshTest("Ghostty palette discovery was not opt-in")
-        return
-      }
-      keyCatcherObject.activateRequested()
-      if (!widgetObject.ghosttyPaletteEnabled || !widgetPeer.ghosttyPaletteEnabled
-          || persistedSettings.ghosttyPalette !== true || serviceObject.leaseCount !== 0) {
-        failRefreshTest("Ghostty option did not persist and synchronize without discovery")
-        return
-      }
-      widgetObject.togglePopupMode(widgetObject.resultsMode)
-      if (!serviceObject.ghosttyPaletteEnabled) {
-        failRefreshTest("opted-in results lease did not request Ghostty panes")
-        return
-      }
-      serviceObject.requestScan(false)
-      widgetPeer.togglePopupMode(widgetPeer.resultsMode)
-    } else if (refreshTestStage === 21) {
-      widgetObject.setKindEnabled("terminal-pane", false)
-      if (serviceObject.ghosttyPaletteEnabled || serviceObject.leaseCount !== 2) {
-        failRefreshTest("hiding Terminal panes did not revoke every monitor's palette request")
-        return
-      }
-      widgetObject.setKindEnabled("terminal-tab", false)
-      widgetObject.setKindEnabled("terminal-tab", true)
-      if (serviceObject.ghosttyPaletteEnabled) {
-        failRefreshTest("Terminal tabs alone enabled the palette")
-        return
-      }
-      widgetObject.setKindEnabled("terminal-pane", true)
-      if (!serviceObject.ghosttyPaletteEnabled) {
-        failRefreshTest("re-enabling panes lost the saved opt-in")
-        return
-      }
-      widgetObject.persistSetting("ghosttyPalette", false)
-      if (serviceObject.ghosttyPaletteEnabled || widgetPeer.ghosttyPaletteEnabled) {
-        failRefreshTest("revoking Ghostty opt-in did not synchronize active leases")
-        return
-      }
       widgetObject.close()
       widgetPeer.close()
-    } else if (refreshTestStage === 22) {
+    } else if (refreshTestStage === 21) {
       console.log("EVERYTHING_REFRESH_OK")
       refreshTestTimer.stop()
       Qt.quit()
@@ -533,13 +493,6 @@ ShellRoot {
     serviceObject.acquire("monitor-a")
     serviceObject.acquire("monitor-b")
     if (serviceObject.leaseCount !== 2) console.error("EVERYTHING_LEASE_ERROR acquire")
-    serviceObject.acquire("monitor-a", true)
-    serviceObject.acquire("monitor-b", true)
-    serviceObject.acquire("monitor-a", false)
-    var updatedScan = serviceObject.requestQueue[serviceObject.requestQueue.length - 1]
-    if (serviceObject.leaseCount !== 2 || !updatedScan
-        || updatedScan.options.ghostty !== false || updatedScan.options.ghosttyPalette !== true)
-      console.error("EVERYTHING_LEASE_ERROR updating-one-monitor-reopened-palette")
     serviceObject.release("monitor-a")
     if (serviceObject.leaseCount !== 1) console.error("EVERYTHING_LEASE_ERROR release-one")
     // Keep the second lease until the fixture verifies a real ready handshake.

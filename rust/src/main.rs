@@ -2,15 +2,13 @@
 //! `helper/everything_helper.py`, built for a ~1 ms cold start.
 //!
 //! Ported providers: Hyprland, Chrome (Screen Context extension), Herdr, Kitty,
-//! tmux and Neovim. AT-SPI and Ghostty run in a lazily started Python sidecar
-//! (see `sidecar.rs`), only when a window that needs them is open.
+//! tmux and Neovim.
 
 mod kitty;
 mod model;
 mod neovim;
 mod procs;
 mod providers;
-mod sidecar;
 mod tmux;
 
 use model::Registry;
@@ -25,8 +23,6 @@ use std::sync::{mpsc, Arc, Mutex};
 pub struct State {
     registry: Registry,
     metadata: HashMap<String, Value>,
-    /// Public rows relayed from the Python sidecar, by provider.
-    external: BTreeMap<String, Vec<Value>>,
     warnings: BTreeMap<String, Vec<String>>,
 }
 
@@ -92,20 +88,16 @@ fn publish_failure(state: &Shared, request_id: &str, provider: &str, error: &str
 
 fn emit_full(state: &Shared, request_id: &str) {
     let guard = state.lock().unwrap();
-    let mut providers: serde_json::Map<String, Value> =
+    let providers: serde_json::Map<String, Value> =
         guard.registry.provider_names().into_iter().map(|p| { let rows = guard.registry.provider_public(&p); (p, Value::Array(rows)) }).collect();
-    let mut items = guard.registry.all_public();
-    for (provider, rows) in &guard.external {
-        items.extend(rows.iter().cloned());
-        providers.insert(provider.clone(), Value::Array(rows.clone()));
-    }
+    let items = guard.registry.all_public();
     let warnings: Vec<&String> = guard.warnings.values().flatten().collect();
     emit(json!({"version": 1, "type": "snapshot", "requestId": request_id, "full": true, "items": items, "providers": providers, "warnings": warnings}));
 }
 
 /// Hyprland first (it feeds every other provider), then the rest in parallel.
 /// A newer scan bumps `current`, and this one stops publishing.
-fn scan(state: Shared, request_id: String, options: Value, my_generation: u64, current: Arc<AtomicU64>) {
+fn scan(state: Shared, request_id: String, my_generation: u64, current: Arc<AtomicU64>) {
     let live = || current.load(Ordering::SeqCst) == my_generation;
     let mut ctx = new_context(&state);
     match hyprland_scan(&mut ctx) {
@@ -123,23 +115,6 @@ fn scan(state: Shared, request_id: String, options: Value, my_generation: u64, c
         }
     }
     let ctx = Arc::new(ctx);
-    // AT-SPI/Ghostty live in the Python sidecar, which starts only when needed.
-    let ghostty_requested = options.get("ghostty") == Some(&Value::Bool(true)) || options.get("ghosttyPalette") == Some(&Value::Bool(true));
-    let sidecar_job = if sidecar::needed(&ctx, ghostty_requested) {
-        let (state, request_id, options) = (state.clone(), request_id.clone(), options.clone());
-        Some(std::thread::spawn(move || sidecar::scan(&state, &request_id, &options)))
-    } else {
-        let mut guard = state.lock().unwrap();
-        for provider in sidecar::PROVIDERS {
-            guard.warnings.remove(provider);
-            if guard.external.remove(provider).map(|rows| !rows.is_empty()).unwrap_or(false) {
-                drop(guard);
-                emit(json!({"version": 1, "type": "snapshot", "requestId": request_id, "provider": provider, "full": false, "items": [], "warnings": []}));
-                guard = state.lock().unwrap();
-            }
-        }
-        None
-    };
     let (tx, rx) = mpsc::channel::<(&'static str, Res<ProviderResult>)>();
     let names: [&'static str; 5] = ["chrome", "kitty", "tmux", "herdr", "neovim"];
     for name in names {
@@ -168,9 +143,6 @@ fn scan(state: Shared, request_id: String, options: Value, my_generation: u64, c
             Ok(result) => publish_partial(&state, &request_id, result),
             Err(error) => publish_failure(&state, &request_id, "neovim", &error),
         }
-    }
-    if let Some(job) = sidecar_job {
-        let _ = job.join();
     }
     if live() {
         emit_full(&state, &request_id);
@@ -240,9 +212,9 @@ fn main() {
         eprintln!("Everything helper must be started with --json-lines");
         std::process::exit(2);
     }
-    let state: Shared = Arc::new(Mutex::new(State { registry: Registry::new(), metadata: HashMap::new(), external: BTreeMap::new(), warnings: BTreeMap::new() }));
+    let state: Shared = Arc::new(Mutex::new(State { registry: Registry::new(), metadata: HashMap::new(), warnings: BTreeMap::new() }));
     let generation = Arc::new(AtomicU64::new(0));
-    emit(json!({"version": 1, "type": "ready", "pluginVersion": "rust-0.1.0", "capabilities": {"partialSnapshots": true, "atspi": false, "ghosttyPalette": false}}));
+    emit(json!({"version": 1, "type": "ready", "pluginVersion": "rust-0.1.0", "capabilities": {"partialSnapshots": true}}));
 
     for line in std::io::stdin().lock().lines() {
         let Ok(line) = line else { break };
@@ -260,20 +232,12 @@ fn main() {
             "scan" => {
                 let mine = generation.fetch_add(1, Ordering::SeqCst) + 1;
                 let (state, current) = (state.clone(), generation.clone());
-                let options = message.get("options").cloned().unwrap_or(json!({}));
-                std::thread::spawn(move || scan(state, request_id, options, mine, current));
+                std::thread::spawn(move || scan(state, request_id, mine, current));
             }
             "activate" => {
                 let (item, token) = (text(&message, "itemId"), text(&message, "token"));
                 if item.is_empty() || token.is_empty() {
                     protocol_error(&request_id, "Activation requires itemId and token");
-                    continue;
-                }
-                let owned_by_sidecar = state.lock().unwrap().external.values().flatten().any(|row| text(row, "id") == item);
-                if owned_by_sidecar {
-                    if !sidecar::forward(&message) {
-                        emit(json!({"version": 1, "type": "activation", "requestId": request_id, "itemId": item, "ok": false, "stale": true, "message": "AT-SPI helper is not running"}));
-                    }
                     continue;
                 }
                 let state = state.clone();
@@ -283,5 +247,4 @@ fn main() {
             other => protocol_error(&request_id, &format!("Unknown request type: {other}")),
         }
     }
-    sidecar::shutdown();
 }

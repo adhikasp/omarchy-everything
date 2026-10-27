@@ -1,29 +1,11 @@
 # Architecture
 
-Everything has a small QML presentation layer and a leased Rust discovery
-helper (`rust/`). The hard boundary between them is the versioned JSON-lines
-protocol. Native integrations remain behind provider adapters. AT-SPI and
-Ghostty live in a small Python sidecar (`helper/`, `everything/`) that the Rust
-helper starts only while a window that needs it is open; it speaks the same
-protocol and the Rust helper relays its rows.
-
 ## System shape
-
-| Layer | Owner | Inputs | Outputs |
-| --- | --- | --- | --- |
-| Plugin registration | `manifest.json` | Omarchy plugin schema | Service and bar-widget entry points |
-| Per-monitor presentation | `Everything.qml` | Shell service items, injected widget settings, and user input | Search, selection, hiding, persisted group visibility, activation requests |
-| Pure presentation model | `EverythingModel.js` | Item arrays, query, hidden IDs, disabled kinds | Supported group catalog, ranked arrays, and reconciliation decisions |
-| Shell-wide state | `Service.qml` | Results leases and helper messages | Merged items, transient hidden IDs, helper requests |
-| Process boundary | `helper/everything_helper.py`, `everything/server.py` | Versioned JSON lines | Correlated snapshots, activation results, nonfatal errors |
-| Discovery core | `everything/discovery.py`, `everything/model.py` | Provider results | Deduplicated things and opaque activation tokens |
-| Native adapters | `everything/providers/` | Current local APIs and validated runtime metadata | Actionable things, routing metadata, exact activation |
-| Shared local access | `everything/commands.py`, `everything/processes.py`, `everything/atspi_runtime.py` | Bounded local state | Safe argv execution, process routes, temporary AT-SPI state |
 
 The dependency direction is:
 
 ```text
-Everything.qml -> Service.qml -> JSON lines -> server/discovery -> providers
+Everything.qml -> Service.qml -> JSON lines -> helper (Rust) -> providers
        |               |                              |
        v               v                              v
 EverythingModel.js  public items               local native APIs
@@ -74,140 +56,7 @@ new catalog group is enabled until explicitly disabled. This persistent filter
 is independent of per-opening group collapse and the service's transient
 per-thing hidden IDs.
 
-The checklist also owns an explicit `ghosttyPalette: boolean` preference,
-disabled unless its value is exactly `true`. It describes the visible palette
-side effect and requests pane discovery only while `terminal-pane` is enabled.
-This setting uses the same shell persistence and monitor injection path as
-group visibility; it is independent of the canonical thing-kind catalog.
-
-`Service.qml` is shell-wide. It owns helper leases, request correlation,
-provider partials, activation-token lookup, transient hidden IDs, polling, and
-helper restart/stop behavior. A bar instance acquires its stable lease while
-its results mode is open and releases it when results close or switch to the
-checklist. Each lease carries that monitor's effective Ghostty palette opt-in;
-the service combines active requests and revokes permission when none remains.
-The helper path is resolved relative to `Service.qml` with `Qt.resolvedUrl`,
-then URL-decoded for argv. It does not depend on private manifest fields,
-which Quattro removes from third-party service manifests.
-
-`EverythingModel.js` stays pure and free of QML object references. Source
-metadata may change without replacing the visible list. A UI update is needed
-only when the ordered UUID sequence or a rendered trait changes; genuine list
-changes preserve the highlighted UUID and its visual offset when possible.
-Its canonical catalog owns all supported kind identifiers, singular labels,
-section labels, glyphs, and display order. It orders exact kind groups
-deterministically, with all Herdr groups before tmux, Herdr agents first within
-that family, and Herdr sessions last within it; then it sorts rows naturally by
-their displayed metadata within each group.
-Pure group-boundary and section-geometry helpers let QML skip hidden rows and
-restore scroll position without changing or duplicating provider results.
-Windows use one preceding bucket for regular workspace rows and one trailing
-bucket for Scratchpad. Search relevance, current state, and recency are
-tie-breakers only. Parent-derived tmux and Herdr metadata is resolved from the
-complete source set before disabled-kind, query, and hidden-ID filtering, so
-disabling a parent group cannot remove metadata needed by an enabled child
-group.
-The normalized query must match one case-insensitive contiguous substring of
-either the title or exact displayed group label. It cannot be split across
-fields; context, provider, badges, and provider search terms never enter
-matching.
-QML owns the accessible section headings and restores visual offset from the
-live selected delegate geometry, falling back to deterministic section geometry
-when that delegate has not been instantiated. The pure model also derives each
-row's fallback kind glyph, matches Hyprland window icon hints to the shell's
-current desktop entries, selects a known glyph from Omarchy's current default
-app map, and chooses one vital metadata value. QML renders that mapped glyph
-first; otherwise it recolors the resolved application image with the same
-highlight-aware foreground used by glyphs, then falls back to the generic
-window glyph. Each row contains only that icon, title, and value on a single
-line. Herdr agent rows reuse the shell's agent-usage robot glyph. Kind labels
-are excluded from metadata;
-provider-specific kind-bearing fallbacks are reduced to their useful identity
-or location before display. Browser tabs show their browser family, while
-application tabs show the compact name from the managed application class that
-owns them; toolkit process names such as Pinta's `dotnet` AT-SPI name are not
-shown. Badge normalization accepts both JavaScript arrays and Qt typed lists,
-including their comma-joined bridge representation, before the kind filter
-runs. The model indexes the complete public parent graph once
-per source update; both ranking and QML use that same index for breadcrumbs and
-tmux window/pane and Herdr workspace/tab/pane metadata. These child rows show
-only their immediate parent's title, while agent and session metadata retain
-their status semantics. Neovim buffer metadata bypasses status priority and
-shows only the final component of the canonical containing directory supplied
-by its provider. The complete path remains provider context for native routing.
-
 ## Helper and provider ownership
-
-`everything/server.py` owns stdin/stdout framing, cancellation, signal
-handling, AT-SPI guard and owner-thread lifetime, and concurrent activation
-tasks.
-`everything/discovery.py` owns provider scheduling, partial/full publication,
-failure isolation, one stale refresh/retry, and the shared metadata used for
-container routing.
-
-Hyprland results are published first. Independent adapters then scan
-concurrently. Neovim receives a cheap second scan after container metadata is
-available so it can route through an exact host without guessing. Ghostty's
-native tabs refresh without opening or focusing a window. Its modal bridge
-requires explicit opt-in and runs only during a panel-opening scan or surface
-activation revalidation, never on the normal poll or native-tab activation
-refresh. Polls retain cached surfaces only while permission and the controlling
-process/window remain valid. Revoking permission drops surface rows and routing
-metadata on the next correlated scan. The panel exposes no manual scan control.
-The shared routing client set contains only mapped Hyprland clients. A separate
-matching-only view retains current unmapped records so a lingering toolkit top
-level binds to its closed, non-routable former parent instead of being assigned
-to another live same-PID window. Even a sole candidate must match the top-level
-title, and multiple top levels claiming one address all fail closed. An AT-SPI
-tab is published only when the matched address also has an exact mapped parent
-in that Hyprland generation.
-
-All libatspi/PyGObject calls, including Ghostty's accessible-object checks, run
-on one dedicated `everything-atspi-owner` asyncio thread. Native scans and
-activations are submitted there as complete provider operations; they never run
-on the protocol loop or a generic executor, and no secondary GLib event loop
-touches libatspi's process-global D-Bus/cache state. Thread-safe cancellation
-flags are checked between synchronous native calls, while native settle waits
-yield on the owner loop. The protocol loop therefore keeps reading scan and
-shutdown requests and publishing unrelated provider completions while AT-SPI
-is slow. The shell's correlated two-second scan poll is the sole refresh
-trigger; the helper emits no unsolicited accessibility-event snapshot.
-Owner shutdown never delegates an unbounded thread join to asyncio's default
-executor. It signals cancellation, requests the owner loop to stop, and waits
-within a fixed bound shorter than the shell's force-stop window; the daemon
-owner therefore cannot keep the helper or its test process alive if a native
-call never returns.
-
-Each adapter returns `ProviderResult`: public `Thing` values, nonfatal
-warnings, and private routing metadata. Adapter failure removes only that
-adapter's internal rows; an outer managed-window result remains available.
-External application support is determined by exposed commands, response
-structures, native identifiers, and live controls. Release and protocol
-numbers never gate a provider. Each adapter owns validation of the features it
-uses; missing features omit their dependent things while other discovered
-features remain available. Herdr discovers collections and exact native targets
-from its snapshot response. Ghostty discovers the palette bridge through its
-native action and modal controls. See [provider behavior](providers.md) for
-the required features and activation failure behavior.
-The AT-SPI adapter owns native-tab structural validation, native-control
-settling, and the private capability-tested GTK action routes used by current
-Pinta and Nautilus. Those action destinations, object paths, names, and integer
-indexes remain inside the opaque activation token. Each provider lifetime and
-each change to the exact browser/Pinta/Nautilus client set first publishes a
-priority-only generation. Generic toolkit trees are traversed on a later poll
-and merged only after that priority set has published, so a slow unrelated
-application cannot hold back actionable tabs from those current adapters. An
-exact browser client remains eligible on later polls until its own actionable
-native tab strip is observed; merely exhausting one settle pass does not make
-an empty accessibility frame authoritative. Bounded settling runs only while
-the priority generation has no actionable coverage and stops on its first
-exact coverage, so one empty client cannot delay rows that are already ready.
-A later scan that loses previously observed coverage makes that client
-retryable again. First-seen Pinta and Nautilus windows join the same bounded
-pass when the generation is otherwise empty. An empty supported application
-is marked attempted after that pass because it may legitimately have no tab
-yet; ordinary later polls can still discover tabs without delaying every
-generation.
 
 Native discovery stops at every `DOCUMENT_*` root instead of spending the
 global node budget inside content that cannot own native controls. Pinta and
@@ -226,11 +75,6 @@ Three identities serve different boundaries:
 | `uiUuid` | Deterministic UI reconciliation identity | Same stable traits |
 | `activationToken` | Authenticated reference to private activation data | Helper process and provider generation |
 
-Raw activation dictionaries stay in the helper (Rust, or the Python sidecar for its own rows). The registry authenticates tokens,
-rejects stale generations, revalidates the native target, and permits exactly
-one same-ID refresh/retry. Titles and other presentation text are never
-activation identities.
-
 ## Lifecycle and state
 
 - The helper exists only while at least one results-mode lease or activation
@@ -238,10 +82,6 @@ activation identities.
   shutdown after pending activation; checklist-only popups never start it.
 - Hyprland rows can arrive before slower adapters; `Service.qml` merges
   provider partials rather than replacing unrelated providers.
-- Hidden IDs, warnings, provider snapshots, tokens, and Ghostty cache are
-  memory-only and reset with the plugin or shell process. Disabled kinds and
-  the Ghostty palette opt-in are instead shell-owned widget settings and
-  survive plugin and shell restarts.
 - The panel closes before activation is dispatched so the shell releases its
   keyboard grab before another local surface receives focus.
 

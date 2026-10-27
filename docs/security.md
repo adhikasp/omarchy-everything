@@ -22,7 +22,6 @@ The helper may execute only these command families:
   targeted `hl.dsp.send_key_state` cases documented below.
 - `kitten @ --to unix:<validated-socket> ls`, `focus-tab --match id:<number>`,
   and `focus-window --match id:<number>`.
-- `ghostty +list-keybinds --plain` while a Ghostty client is actually managed.
 - `tmux -S <validated-socket> list-sessions`, `list-windows -a`,
   `list-panes -a`, `list-clients`, and `switch-client`; or a new local
   `omarchy-launch-terminal tmux -S … attach-session …` client.
@@ -34,9 +33,6 @@ The helper may execute only these command families:
   `omarchy-launch-terminal nvim --server <socket> --remote-ui`.
 - `$OMARCHY_PATH/bin/omarchy-notification-send --app-name Everything …` after
   a stale or failed user activation.
-- `<plugin>/rust/target/release/everything-helper --json-lines`, and from it the
-  AT-SPI/Ghostty sidecar `python3 <plugin>/helper/everything_helper.py --json-lines`
-  with its private `--atspi-guard <parent-pid>` child.
 
 Arguments derived from titles, paths, sockets, or native IDs remain individual
 argv fields. The fixed Neovim expression receives only a validated integer
@@ -87,111 +83,4 @@ environment read is discarded completely. Ordinary process names, command
 lines, and environment values are never serialized into the public result
 list.
 
-## Temporary AT-SPI state
-
-While a helper lease exists, a guard reads `org.a11y.Status.IsEnabled` and
-`ScreenReaderEnabled` from `org.a11y.Bus`. If AT-SPI was disabled, the guard
-temporarily writes only `IsEnabled=true`. It never writes
-`ScreenReaderEnabled`. On normal shutdown, cancellation, SIGTERM/SIGINT, or
-parent pipe EOF after a crash, the guard restores the original `IsEnabled`
-value. If another actor changes screen-reader mode meanwhile, that choice is
-left untouched.
-
-AT-SPI reads application/window/tab names, roles, state, actions, remote object
-paths, and native tab accessibility IDs. Native-tab traversal crosses at most
-one transparent `GROUPING` wrapper beneath a tab list and never crosses a
-document subtree. Browser and generic application rows invoke only the chosen
-live native tab's exposed preferred action. Component focus is not treated as
-a generic tab activation capability; its remaining use is inside Ghostty's
-separately capability-tested palette bridge.
-
-The helper calls libatspi and its PyGObject accessible interfaces only from one
-dedicated asyncio thread named `everything-atspi-owner`. Both the native-tab
-and Ghostty adapters submit their complete scans and activations to that same
-owner. The protocol loop never makes a native accessibility call, and the
-helper starts neither a GLib accessibility-event thread nor parallel executor
-jobs that could concurrently mutate libatspi's process-global D-Bus connection
-or accessible cache. Cancellation uses thread-safe flags checked between
-synchronous native calls; owner-loop settle delays remain cancellable without
-crossing the native thread-affinity boundary. Owner shutdown is bounded and
-does not submit `Thread.join` to asyncio's non-daemon default executor. The
-owner itself is a daemon thread, so a native call that never returns cannot
-keep the local helper or the Python test process alive after shutdown has been
-requested.
-
-## Session D-Bus GTK actions
-
-The Pinta and Nautilus adapters make bounded calls on the existing user
-session bus. Every call uses `NO_AUTO_START` and a 500 ms timeout. Discovery
-may read at most 512 existing bus names and their
-`GetConnectionUnixProcessID` values, `org.gtk.Actions.Describe`, and up to
-64 KiB of Nautilus window-node introspection. It accepts at most 64 numeric
-window paths.
-
-The only mutating calls are Pinta `active_document` and Nautilus `go-to-tab`
-through `org.gtk.Actions.Activate`, each with one validated integer parameter.
-Pinta's action index must equal the separately validated AT-SPI tab index.
-Pinta's unique bus destination and Nautilus's well-known owner must match the
-managed window PID; ownership and the exact object path, action, signature,
-count, index, and AT-SPI native identity are revalidated at activation. Pinta's
-final action state is also verified. Pre/post native checks follow the private
-strip path captured by discovery and reject a changed path, document ancestor,
-non-tab-list target, changed structure, count, index, or native ID; unrelated
-branches are not read during activation. Multiple eligible Pinta connections
-or Nautilus window action groups fail closed. No arbitrary application action
-is accepted, and D-Bus activation never starts an application.
-
-## Ghostty palette and synthetic keys
-
-Ghostty's command palette is an opt-in, capability-tested bridge. It
-requires a literal-true shell setting and an enabled Terminal panes group.
-Discovery and cleanup use the same native `win.toggle-command-palette` action;
-there is no synthetic opening shortcut. A pre-existing modal is left alone. The
-filter `Focus:` is written through AT-SPI `EditableText`; query text is never
-typed into a PTY. The command input and populated list must be descendants of
-the same live AT-SPI dialog/alert; application-wide lookalikes are rejected.
-
-Palette navigation sends exact-address current Hyprland Lua dispatches of
-`hl.dsp.send_key_state` with paired `down`/`up` states for:
-
-- `HOME` to reset to the first filtered row;
-- `DOWN` to walk or select a verified row;
-- `RETURN` only after the complete target fingerprint is revalidated.
-
-Before every navigation/activation pair, Everything proves that the palette
-still exists and its EditableText value is exactly `Focus:`. A key is never
-allowed to continue if the modal
-disappeared, so navigation cannot fall through to the PTY. Legacy
-`sendshortcut` is not used. Successful Enter is also verified to have closed
-the palette; otherwise the native toggle closes it and activation fails closed.
-
-Standalone tab selection can send one effective Ghostty binding read from
-`+list-keybinds --plain` for `goto_tab`, `last_tab`, or `next_tab`. Global,
-all-window, unconsumed, unknown-modifier, and sequence bindings are rejected;
-the exact target address and selected AT-SPI tab are verified around every
-step.
-
-Cleanup retains the exact native opening action before invoking it. If the
-search or list cannot be recognized, that action still undoes the opening.
-When a known modal has already disappeared, cleanup does not toggle it back
-open. Native cancellation checkpoints are temporarily masked only in cleanup
-on the same AT-SPI owner thread so cancellation cannot skip the closing action
-or focus restoration. Async cleanup settling and owner shutdown remain bounded.
-No Escape is sent to an unrecognized modal or a terminal.
-
-The palette is closed in cleanup; refusal is reported as a nonfatal warning.
-Its surface fingerprint contains
-process birth, exact title, canonical cwd, duplicate occurrence, and filtered
-ordinal, and is rebuilt before activation.
-
 ## Persistence
-
-There is no runtime database or cache file. Provider snapshots, opaque-token
-secrets, helper warnings, monitor leases, Ghostty scan cache, and hidden IDs
-exist only in memory, including unsupported palette capability results keyed
-by process birth. Plugin or shell reload resets them. The persistent
-Everything-owned preferences are the normalized `disabledKinds` string array
-and explicit `ghosttyPalette` boolean in the widget's existing `shell.json`
-entry. QML writes them through the shell's `updateEntryInline` API; they contain
-only supported public kind identifiers and the opt-in boolean, and
-never discovered thing data, native identities, titles, paths, or tokens.

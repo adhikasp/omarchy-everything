@@ -239,10 +239,6 @@ pub fn launch_terminal_and_focus(argv: &[&str]) -> Res<()> {
 
 // ---- Chrome (Screen Context extension) -----------------------------------
 
-pub fn chrome_extension_available() -> bool {
-    std::fs::metadata(chrome_socket()).map(|m| std::os::unix::fs::FileTypeExt::is_socket(&m.file_type())).unwrap_or(false)
-}
-
 fn chrome_socket() -> String {
     std::env::var("SCREEN_CONTEXT_SOCK").unwrap_or_else(|_| {
         let runtime = std::env::var("XDG_RUNTIME_DIR").unwrap_or("/tmp".into());
@@ -320,7 +316,7 @@ pub fn chrome_activate(activation: &Value) -> Res<()> {
 // ---- Routing -------------------------------------------------------------
 
 /// Resolve one process to a proven terminal surface or managed window.
-/// Kitty/Ghostty surfaces win over their outer client; with several surfaces
+/// Kitty surfaces win over their outer client; with several surfaces
 /// only an exact title plus cwd match counts; otherwise the caller must open
 /// a fresh client rather than guess.
 pub fn route_for_process(ctx: &Context, pid: i64, title: &str, cwd: &str) -> Option<Value> {
@@ -328,7 +324,7 @@ pub fn route_for_process(ctx: &Context, pid: i64, title: &str, cwd: &str) -> Opt
     let ancestors = ctx.procs.ancestors(pid);
     let ancestor_pids: Vec<i64> = ancestors.iter().map(|p| p.pid).collect();
 
-    for provider in ["kitty", "ghostty"] {
+    for provider in ["kitty"] {
         let surfaces: Vec<Value> = ctx.meta_list(provider, "surfaces").into_iter().filter(|s| ancestor_pids.contains(&num(s, "pid"))).collect();
         if surfaces.is_empty() {
             continue;
@@ -345,14 +341,12 @@ pub fn route_for_process(ctx: &Context, pid: i64, title: &str, cwd: &str) -> Opt
         return None;
     }
 
-    // A process inside an internal terminal with no current metadata would be
-    // guessed onto the outer window. Ghostty window routing stays exact when
-    // pane discovery is off and its PID owns exactly one managed window.
-    let ghostty_has_surfaces = !ctx.meta_list("ghostty", "surfaces").is_empty();
+    // A process inside Kitty with no current metadata would be guessed onto
+    // the outer window.
     let is_internal = |p: &&crate::procs::Proc| {
         let exe = p.argv.first().map(|a| basename(a).to_lowercase()).unwrap_or_default();
         let comm = p.comm.to_lowercase();
-        comm == "kitty" || exe == "kitty" || (ghostty_has_surfaces && (comm == "ghostty" || exe == "ghostty"))
+        comm == "kitty" || exe == "kitty"
     };
     if ancestors.iter().any(|p| is_internal(&p)) {
         return None;

@@ -10,8 +10,6 @@ tests/all.sh
 
 The suite performs:
 
-- Rust unit tests (`cargo test`), Python compilation and unit/protocol tests for
-  the AT-SPI/Ghostty sidecar;
 - case-insensitive contiguous-substring ranking over titles and displayed group
   names only, rejection of subsequences and cross-field queries, explicit
   exclusion of context/provider/badges/search terms, stable kind grouping,
@@ -39,30 +37,6 @@ The suite performs:
   correlation, malformed-request recovery, and stale-token rejection;
 - partial provider streaming, provider failure isolation, stale-row removal,
   and scan cancellation propagation;
-- AT-SPI state restoration without screen-reader writes, browser-family
-  matching, bounded settling of otherwise-empty priority generations until
-  first exact coverage and after transient coverage loss, ordinary retry
-  eligibility without allowing an uncovered client to delay available rows,
-  one bounded first-seen settle for supported application windows without
-  repeated delays for a legitimately empty window, priority-only publication
-  before deferred generic traversal at provider startup and after the priority
-  client set changes, emitted browser-tab rows, app-mode exclusion,
-  native default-action activation, deep GTK 4 tab lists with one transparent
-  grouping wrapper, hard document-subtree pruning before descendant reads,
-  repeated toolkit accessibility IDs, rejection of generic component-only
-  tabs, capability-tested Pinta/Nautilus action routes,
-  Pinta's direct AT-SPI/action indexes and activation method,
-  owning-application class names on application-tab metadata,
-  removal of application tabs whose mapped parent window has closed, including
-  same-PID live/unmapped client disambiguation without stale-top rebinding,
-  shared dedicated-owner thread affinity for AT-SPI and Ghostty scans and
-  activation, protocol-loop responsiveness during a blocking native traversal,
-  bounded owner shutdown without a non-daemon join worker when a native call
-  remains blocked, and cancellation without publishing a partially settled
-  provider generation,
-  D-Bus owner/action/signature/index validation, targeted pre/post
-  native-identity checks without unrelated branch traversal, multi-window
-  ambiguity, and exclusion of document-authored/tool tab strips;
 - Hyprland mapped/hidden/group/scratchpad handling, mapped-only child-provider
   routing with unmapped matching evidence, and Herdr feature discovery of
   every supported kind, parent links, and exact focus targets using the
@@ -70,30 +44,6 @@ The suite performs:
   older, future, and absent version/protocol labels; extra fields; independently
   missing/malformed collections; invalid or duplicate native IDs; optional
   ranking metadata; unavailable snapshots; and focus failures before routing;
-- Ghostty effective-binding filtering, 9+ virtualized rows, duplicate
-  fingerprint occurrences, fail-closed mutations, and exact-address paired
-  key-state construction; unnamed deeply nested palette search fields, cleanup
-  through the opening action after failed detection/text writes/cancellation,
-  palette operation without an executable version probe, rejection of missing
-  native actions before focus, preservation of existing and already-dismissed
-  dialogs, quiet capability
-  fallback per process birth, native-tab polling without focus or a modal,
-  and surface cache revocation;
-- Neovim's unique/ambiguous Herdr and multi-surface Ghostty routing;
-- QML lint and an offscreen Quickshell fixture that synchronously loads both
-  entrypoints, verifies the chevron's painted horizontal center without
-  changing its shell slot, pointer target, or foreground color, exercises two
-  independent monitor leases, and covers right-click checklist routing, all
-  supported checkbox rows, pointer and keyboard toggles, immediate filtering,
-  persistence calls, cross-monitor settings injection, selection recovery,
-  mode switching, results-only lease transitions, default-off Ghostty opt-in,
-  cross-monitor permission updates, and pane-group gating. A public-only
-  manifest starts a recording helper from a path containing spaces, percent,
-  hash, and Unicode characters; its ready handshake and received scan options
-  are verified. The fixture uses a harmless transport helper and swaps
-  compositor-dependent `KeyboardPanel` for an API-equivalent test double,
-  because Qt's offscreen backend cannot instantiate a layer-shell
-  `PanelWindow`;
 - `omarchy plugin validate .` against the installed current manifest schema.
 
 ## Live helper smoke test
@@ -153,57 +103,11 @@ single refresh followed by a visible stale notification.
 - Start `btop`, ordinary shells, and background processes. Confirm none becomes
   a row except through a window, pane, or supported container.
 
-### Browsers and native application tabs
-
-- Chromium/Chrome, Brave variants, Edge, Firefox, Zen, Vivaldi, Helium, and
-  LibreWolf where installed: multiple windows, private windows, duplicate
-  titles, hidden tabs, and horizontal/vertical/custom native strips. Launch
-  app-mode/PWA windows through Omarchy and confirm they retain their managed
-  window rows but produce neither browser-tab nor application-tab rows.
-- A test page containing ARIA `tablist`/`tab` elements plus browser developer
-  tools. Confirm neither page-authored nor tool tabs appear.
-- Current Nautilus and Pinta with multiple native tabs, plus another GTK/Qt
-  application with genuine native tabs and an editor/web app with DOM tabs.
-  Launch Nautilus and create its tabs before opening Everything; both rows must
-  appear in that initial panel generation without closing and reopening it.
-  Confirm the deep, grouping-wrapped Nautilus/Pinta strips expand, only native
-  application tabs become rows, duplicate toolkit accessibility IDs remain
-  distinct, each row's metadata names its owning application rather than its
-  toolkit runtime, every row switches to the exact tab, and every application
-  retains its outer-window row. Close a parent application while Everything
-  remains open and confirm its tab rows disappear on the next refresh even if
-  the toolkit process remains alive. Close and reopen Everything while Pinta
-  stays open, then confirm all Pinta tabs return. Open two Nautilus windows and
-  confirm their ambiguous component-only tabs disappear while both
-  outer-window rows remain.
-- Confirm browser rows are title-only and never claim a URL or favicon.
-
-### Kitty and Ghostty
+### Kitty
 
 - Kitty: multiple OS windows, tabs, panes, duplicate titles, a removed pane,
   and a stale runtime socket. Confirm numeric IDs select the intended object
   before its exact outer window is focused.
-- Ghostty with the required native palette controls: multiple processes/windows,
-  9+ tabs, horizontal and vertical
-  splits, unselected tabs, identical title/cwd rows, and enough rows to force
-  palette virtualization. First leave Ghostty pane discovery off and confirm
-  opening Everything never opens a palette or changes Ghostty focus, while
-  windows and native tabs remain available. Enable the separate Ghostty option
-  with Terminal panes checked to exercise the palette cases. Disable Terminal
-  panes while leaving Terminal tabs checked and confirm the palette stops.
-  Repeat opt-in and group changes across monitors with results open.
-- On builds with unnamed deeply nested search fields or ineffective
-  EditableText writes, confirm the optional probe closes its palette and
-  quietly falls back to tabs/windows. Repeat a scan in the same helper lifetime
-  and confirm a failed capability is not probed again. Cancel a probe and
-  confirm cleanup runs. Leave a Ghostty dialog open before scanning and confirm
-  Everything does not modify it.
-- Mutate Ghostty surfaces mid-scan and mid-activation. Confirm fingerprint
-  validation fails rather than selecting a neighbor.
-- Run a PTY key logger while exercising Ghostty discovery. Confirm no
-  `HOME`/`DOWN`/`RETURN`/`ESCAPE` reaches the PTY and no `Focus:` text is typed.
-- Change Ghostty tab bindings and confirm Everything uses only the effective
-  local binding plus AT-SPI selection verification.
 
 ### tmux, Herdr, and Neovim
 
@@ -222,23 +126,9 @@ single refresh followed by a visible stale notification.
   component of its canonical containing directory and an unnamed buffer shows
   only the final component of the editor working directory, regardless of
   modified/loaded/displayed status badges.
-- Put nested Neovim instances in duplicate-cwd Herdr panes and multi-split
-  Ghostty surfaces. Confirm inherited Herdr pane IDs disambiguate duplicate
-  cwd values, and only hidden buffers with ambiguous hosts open a fresh
-  `--remote-ui` rather than guessing.
 
 ### Lifecycle and recovery
 
-- Leave the panel open while repeatedly opening, renaming, switching, and
-  closing browser, application, and Ghostty tabs across several poll cycles.
-  Confirm the helper remains alive, has exactly one
-  `everything-atspi-owner` thread and no `everything-atspi-events` thread while
-  scans and activations continue, and still responds promptly to shutdown while
-  a slow accessibility peer is present.
-- With Ghostty pane discovery explicitly enabled, open the panel and confirm
-  Ghostty scans once and closes its palette. Leave
-  the panel open through several two-second polls and confirm socket/CLI
-  updates merge without the modal reopening.
 - With a middle row highlighted, refresh an unchanged result set and confirm
   the list model is not replaced. Then reorder or add rows and confirm the
   same UUID stays highlighted at the same visual offset. Remove that row and
@@ -275,9 +165,5 @@ single refresh followed by a visible stale notification.
 - Open the panel while the pointer is stationary over a result. Confirm that
   the pointer does not steal the keyboard highlight; move it deliberately and
   confirm the highlight follows exactly one row. Repeat across a list refresh.
-- Kill the helper during a scan and during activation. Confirm the panel stays
-  message-free, activation failure uses the external notification path,
-  restart behavior stays bounded, no worker persists after close, and the
-  prior AT-SPI state is restored.
 - Hide rows, close/reopen the panel, and wait for an automatic refresh: they
   remain hidden. Reload `b.everything` or `omarchy-shell`: they return.

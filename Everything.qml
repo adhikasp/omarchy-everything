@@ -35,14 +35,7 @@ Panel {
   readonly property var supportedGroups: Model.supportedGroupCatalog()
   readonly property var disabledKinds: Model.normalizeDisabledKinds(
     root.setting("disabledKinds", []))
-  readonly property bool ghosttyPaletteEnabled: root.setting("ghosttyPalette", false) === true
-  readonly property bool ghosttyPaletteRequested: ghosttyPaletteEnabled
-    && !kindDisabled("terminal-pane")
-  readonly property var checklistEntries: supportedGroups.concat([{
-    setting: "ghosttyPalette",
-    sectionLabel: "Ghostty panes (opens command palette)",
-    icon: Model.kindIcon("terminal-pane")
-  }])
+  readonly property var checklistEntries: supportedGroups
   readonly property color foreground: root.bar ? root.bar.foreground : Color.foreground
   readonly property color dimForeground: Qt.darker(foreground, 1.55)
   readonly property real rowHeight: Style.font.body * 1.5
@@ -123,9 +116,7 @@ Panel {
   }
 
   function toggleChecklistEntry(entry) {
-    if (entry.setting === "ghosttyPalette")
-      persistSetting("ghosttyPalette", !ghosttyPaletteEnabled)
-    else toggleKindVisibility(entry.kind)
+    toggleKindVisibility(entry.kind)
   }
 
   function resetGroupChecklist() {
@@ -594,20 +585,16 @@ Panel {
 
   onResultsModeOpenChanged: {
     if (!everythingService) return
-    if (resultsModeOpen) everythingService.acquire(instanceKey, ghosttyPaletteRequested)
+    if (resultsModeOpen) everythingService.acquire(instanceKey)
     else everythingService.release(instanceKey)
   }
 
   onEverythingServiceChanged: {
     if (resultsModeOpen && everythingService)
-      everythingService.acquire(instanceKey, ghosttyPaletteRequested)
+      everythingService.acquire(instanceKey)
     scheduleRankedItems()
   }
   onDisabledKindsChanged: scheduleRankedItems()
-  onGhosttyPaletteRequestedChanged: {
-    if (resultsModeOpen && everythingService)
-      everythingService.acquire(instanceKey, ghosttyPaletteRequested)
-  }
   Component.onCompleted: scheduleRankedItems()
   Component.onDestruction: if (everythingService) everythingService.release(instanceKey)
 
@@ -1128,12 +1115,10 @@ Panel {
           id: groupRow
           required property var modelData
           required property int index
-          objectName: modelData.setting ? "everything-setting-" + modelData.setting
-            : "everything-group-" + modelData.kind
+          objectName: "everything-group-" + modelData.kind
           width: groupList.width
           height: root.groupChecklistRowHeight
-          readonly property bool checked: modelData.setting === "ghosttyPalette"
-            ? root.ghosttyPaletteEnabled : !root.kindDisabled(modelData.kind)
+          readonly property bool checked: !root.kindDisabled(modelData.kind)
           readonly property bool highlighted: groupList.currentIndex === index
             && (groupList.activeFocus || keyCatcher.activeFocus)
 
@@ -1145,9 +1130,7 @@ Panel {
 
           Accessible.role: Accessible.CheckBox
           Accessible.name: modelData.sectionLabel
-          Accessible.description: modelData.setting === "ghosttyPalette"
-            ? "Optional pane discovery opens Ghostty's command palette; Terminal panes must also be checked"
-            : (checked ? "Shown in Everything search results" : "Hidden from Everything search results")
+          Accessible.description: checked ? "Shown in Everything search results" : "Hidden from Everything search results"
           Accessible.checkable: true
           Accessible.checked: checked
           Accessible.focusable: true

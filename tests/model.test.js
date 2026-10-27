@@ -517,7 +517,7 @@ assert.match(qml,
   /readonly property bool resultsModeOpen:\s*root\.opened && popupMode === resultsMode/,
   "helper leases distinguish results visibility from checklist visibility")
 assert.match(qml,
-  /onResultsModeOpenChanged:[\s\S]*if \(resultsModeOpen\) everythingService\.acquire\(instanceKey, ghosttyPaletteRequested\)[\s\S]*else everythingService\.release\(instanceKey\)/,
+  /onResultsModeOpenChanged:[\s\S]*if \(resultsModeOpen\) everythingService\.acquire\(instanceKey\)[\s\S]*else everythingService\.release\(instanceKey\)/,
   "switching popup modes acquires and releases the results-only helper lease")
 assert.match(qml, /PointerMoveGate\s*\{[\s\S]*?referenceItem:\s*resultList[\s\S]*?\}/,
   "row pointer selection uses the shell movement gate")
@@ -621,7 +621,7 @@ assert.match(qml,
 
 const serviceQml = fs.readFileSync(path.join(root, "Service.qml"), "utf8")
 assert.match(serviceQml, /reconcileItems\(items, incoming\)/, "token-only snapshots keep the visible model stable")
-assert.match(serviceQml, /requestScan\(false\)/, "background refreshes remain automatic")
+assert.match(serviceQml, /requestScan\(\)/, "background refreshes remain automatic")
 assert.doesNotMatch(serviceQml, /statusMessage|activeScanQuiet/,
   "the service carries no dead panel-message state")
 assert.doesNotMatch(serviceQml, /function refresh\s*\(/,

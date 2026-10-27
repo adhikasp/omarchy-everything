@@ -10,7 +10,7 @@ initial handshake reports plugin version `0.0.1`.
 The handshake is the only uncorrelated response:
 
 ```json
-{"version":1,"type":"ready","pluginVersion":"0.0.1","capabilities":{"partialSnapshots":true,"atspi":true,"ghosttyPalette":true}}
+{"version":1,"type":"ready","pluginVersion":"0.0.1","capabilities":{"partialSnapshots":true}}
 ```
 
 Every request has a caller-unique `id`. Every response caused by that request
@@ -19,19 +19,13 @@ nonfatal; the helper continues accepting lines.
 
 ## Requests
 
-Scan, optionally permitting and requesting the one-shot Ghostty palette probe:
+Scan:
 
 ```json
-{"version":1,"id":"scan-7","type":"scan","options":{"ghostty":true,"ghosttyPalette":true}}
+{"version":1,"id":"scan-7","type":"scan","options":{}}
 ```
 
-Both options require literal JSON `true`; omitted or malformed values are
-false. `ghosttyPalette` permits the visible modal bridge and retention of its
-cached surfaces. `ghostty` requests a fresh palette probe in this scan and has
-no effect without that permission. Normal polling sends `ghostty: false` with
-the current permission, so native tabs refresh while permitted surface rows
-remain cached. Revocation clears those rows and their routing metadata. Ghostty
-native tabs and managed windows remain eligible with both options false.
+`options` is reserved; the helper currently ignores it.
 
 Activate a public item using its process-local opaque token:
 
@@ -39,24 +33,16 @@ Activate a public item using its process-local opaque token:
 {"version":1,"id":"activate-8","type":"activate","itemId":"provider:native-id","token":"v1.opaque"}
 ```
 
-Shut down cleanly and restore temporary runtime state:
+Shut down cleanly:
 
 ```json
 {"version":1,"id":"shutdown-9","type":"shutdown"}
 ```
 
-A newer scan cancels an unfinished older scan. Shutdown cancels scans and
-activations before the AT-SPI guard is released.
-AT-SPI and Ghostty work runs on a dedicated native-owner loop, so a synchronous
-accessibility traversal cannot prevent the protocol loop from reading either
-request. Cancellation is signaled directly to that owner and checked between
-native calls; no later partial or full snapshot is emitted for the cancelled
-request. Shutdown waits only for the owner's bounded cleanup interval. A native
-call that fails to return cannot hold the helper past the shell's force-stop
-window.
-Snapshots are emitted only for explicit scan requests. `Service.qml` supplies
-the periodic liveness poll; the helper does not publish unsolicited AT-SPI
-event snapshots, so every snapshot remains correlated to a current caller ID.
+A newer scan cancels an unfinished older scan: no later partial or full
+snapshot is emitted for the cancelled request. Snapshots are emitted only for
+explicit scan requests. `Service.qml` supplies the periodic liveness poll, so
+every snapshot remains correlated to a current caller ID.
 
 ## Responses
 

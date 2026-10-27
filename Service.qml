@@ -36,38 +36,32 @@ Item {
   // this component, decoding the file URL before passing it as an argv path.
   readonly property string helperPath: decodeURIComponent(
     String(Qt.resolvedUrl("rust/target/release/everything-helper")).replace(/^file:\/\//, ""))
-  readonly property bool ghosttyPaletteEnabled: Object.keys(leases).some(function(key) {
-    return leases[key] === true
-  })
 
   function nextRequestId(prefix) {
     requestSerial += 1
     return String(prefix || "request") + "-" + requestSerial
   }
 
-  function acquire(ownerKey, ghosttyPalette) {
+  function acquire(ownerKey) {
     var key = String(ownerKey || "panel")
-    var enabled = ghosttyPalette === true
-    if (leases[key] === enabled) return
+    if (leases[key] === true) return
     var next = {}
     for (var existing in leases) next[existing] = leases[existing]
-    next[key] = enabled
+    next[key] = true
     leases = next
     leaseCount = Object.keys(next).length
     refreshLocalRows()
     ensureHelper()
-    requestScan(enabled)
+    requestScan()
   }
 
   function release(ownerKey) {
     var key = String(ownerKey || "panel")
     if (leases[key] === undefined) return
-    var hadPalette = ghosttyPaletteEnabled
     var next = {}
     for (var existing in leases) if (existing !== key) next[existing] = leases[existing]
     leases = next
     leaseCount = Object.keys(next).length
-    if (hadPalette && !ghosttyPaletteEnabled && leaseCount > 0) requestScan(false)
     maybeStopTimer.restart()
   }
 
@@ -75,7 +69,7 @@ Item {
     hiddenIds = Model.withHidden(hiddenIds, id)
   }
 
-  function requestScan(includeGhostty) {
+  function requestScan() {
     if (leaseCount <= 0) return
     var requestId = nextRequestId("scan")
     activeScanId = requestId
@@ -84,10 +78,7 @@ Item {
       version: 1,
       id: requestId,
       type: "scan",
-      options: {
-        ghostty: includeGhostty === true && ghosttyPaletteEnabled,
-        ghosttyPalette: ghosttyPaletteEnabled
-      }
+      options: {}
     })
   }
 
@@ -364,7 +355,7 @@ Item {
     interval: 2000
     repeat: true
     running: root.leaseCount > 0 && root.helperReady
-    onTriggered: if (!root.scanning) root.requestScan(false)
+    onTriggered: if (!root.scanning) root.requestScan()
   }
 
   // Keep the helper warm after the panel closes: a cold start still costs a
@@ -389,7 +380,7 @@ Item {
     repeat: false
     onTriggered: {
       root.ensureHelper()
-      if (root.leaseCount > 0) root.requestScan(true)
+      if (root.leaseCount > 0) root.requestScan()
     }
   }
 
