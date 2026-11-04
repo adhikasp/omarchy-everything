@@ -38,7 +38,9 @@ Panel {
   readonly property var checklistEntries: supportedGroups
   readonly property color foreground: root.bar ? root.bar.foreground : Color.foreground
   readonly property color dimForeground: Qt.darker(foreground, 1.55)
-  readonly property real rowHeight: Style.font.body * 1.5
+  // Launcher text runs larger than the OS default (user ask, 2026-11-04).
+  readonly property real fontScale: 1.5
+  readonly property real rowHeight: Style.font.body * fontScale * 1.5
   readonly property int sectionHeight: Style.space(24)
   readonly property int groupChecklistRowHeight: Style.space(36)
   readonly property string resultsMode: "results"
@@ -787,7 +789,7 @@ Panel {
           text: "\u21b5 open   \u21e5 list   / search   \u232b hide   esc close"
           color: root.dimForeground
           font.family: Style.font.family
-          font.pixelSize: Style.font.caption
+          font.pixelSize: (Style.font.caption * root.fontScale)
         }
 
         Text {
@@ -797,7 +799,7 @@ Panel {
           text: root.rankedItems.length + (root.rankedItems.length === 1 ? " result" : " results")
           color: root.dimForeground
           font.family: Style.font.family
-          font.pixelSize: Style.font.caption
+          font.pixelSize: (Style.font.caption * root.fontScale)
         }
       }
 
@@ -813,7 +815,7 @@ Panel {
           : "Nothing open yet\u2026"
         color: root.dimForeground
         font.family: Style.font.family
-        font.pixelSize: Style.font.body
+        font.pixelSize: (Style.font.body * root.fontScale)
         Accessible.role: Accessible.StaticText
         Accessible.name: text
       }
@@ -879,7 +881,7 @@ Panel {
             text: sectionHeading.collapsed ? "\uf054" : "\uf078"
             color: sectionHeading.highlighted ? root.foreground : root.dimForeground
             font.family: Style.font.family
-            font.pixelSize: Style.font.caption
+            font.pixelSize: (Style.font.caption * root.fontScale)
           }
 
           Text {
@@ -892,7 +894,7 @@ Panel {
               + "  \u00b7  " + root.kindCount(sectionHeading.section)
             color: root.dimForeground
             font.family: Style.font.family
-            font.pixelSize: Style.font.caption
+            font.pixelSize: (Style.font.caption * root.fontScale)
             font.bold: true
             elide: Text.ElideRight
           }
@@ -978,7 +980,7 @@ Panel {
               id: applicationIcon
               objectName: "everything-window-icon-" + row.index
               anchors.centerIn: parent
-              width: Math.min(parent.width, Style.font.icon)
+              width: Math.min(parent.width, (Style.font.icon * root.fontScale))
               height: width
               visible: row.windowAppGlyph.length === 0
                 && row.windowIconSource.length > 0 && status !== Image.Error
@@ -1004,7 +1006,7 @@ Panel {
               text: row.windowAppGlyph
               color: row.highlighted ? root.foreground : root.dimForeground
               fontFamily: Style.font.family
-              fontSize: Style.font.icon
+              fontSize: (Style.font.icon * root.fontScale)
             }
 
             Text {
@@ -1014,7 +1016,7 @@ Panel {
               text: Model.kindIcon(row.modelData.kind)
               color: row.highlighted ? root.foreground : root.dimForeground
               font.family: Style.font.family
-              font.pixelSize: Style.font.icon
+              font.pixelSize: (Style.font.icon * root.fontScale)
               horizontalAlignment: Text.AlignHCenter
               verticalAlignment: Text.AlignVCenter
             }
@@ -1024,7 +1026,7 @@ Panel {
             id: metadataMetrics
             text: row.metadata
             font.family: Style.font.family
-            font.pixelSize: Style.font.caption
+            font.pixelSize: (Style.font.caption * root.fontScale)
           }
 
           Text {
@@ -1038,7 +1040,7 @@ Panel {
             text: row.metadata
             color: root.dimForeground
             font.family: Style.font.family
-            font.pixelSize: Style.font.caption
+            font.pixelSize: (Style.font.caption * root.fontScale)
             horizontalAlignment: Text.AlignRight
             elide: Text.ElideMiddle
             Accessible.role: Accessible.StaticText
@@ -1055,7 +1057,7 @@ Panel {
             text: String(row.modelData.title || "Untitled")
             color: root.foreground
             font.family: Style.font.family
-            font.pixelSize: Style.font.body
+            font.pixelSize: (Style.font.body * root.fontScale)
             lineHeightMode: Text.FixedHeight
             lineHeight: root.rowHeight
             elide: Text.ElideRight
@@ -1156,7 +1158,7 @@ Panel {
             text: groupRow.checked ? "\uf14a" : "\uf0c8"
             color: groupRow.checked ? Color.accent : root.dimForeground
             font.family: Style.font.family
-            font.pixelSize: Style.font.body
+            font.pixelSize: (Style.font.body * root.fontScale)
             horizontalAlignment: Text.AlignHCenter
           }
 
@@ -1169,7 +1171,7 @@ Panel {
             text: groupRow.modelData.icon
             color: groupRow.highlighted ? root.foreground : root.dimForeground
             font.family: Style.font.family
-            font.pixelSize: Style.font.icon
+            font.pixelSize: (Style.font.icon * root.fontScale)
             horizontalAlignment: Text.AlignHCenter
           }
 
@@ -1182,7 +1184,7 @@ Panel {
             text: groupRow.modelData.sectionLabel
             color: groupRow.checked ? root.foreground : root.dimForeground
             font.family: Style.font.family
-            font.pixelSize: Style.font.body
+            font.pixelSize: (Style.font.body * root.fontScale)
             elide: Text.ElideRight
           }
 

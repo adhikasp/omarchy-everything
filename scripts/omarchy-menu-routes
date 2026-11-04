@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+"""Flatten the Omarchy menu (default + user extension) into JSON leaf rows for the Everything bar.
+Output: [{"id","title","terms":[...],"action"}]. Rows whose `when` fails are dropped."""
+import json, os, re, subprocess, sys
+
+def strip_jsonc(s):
+    out, i, n, in_str = [], 0, len(s), False
+    while i < n:
+        c = s[i]
+        if in_str:
+            out.append(c)
+            if c == "\\": out.append(s[i+1]); i += 1
+            elif c == '"': in_str = False
+        elif c == '"': in_str = True; out.append(c)
+        elif s.startswith("//", i):
+            while i < n and s[i] != "\n": i += 1
+            continue
+        elif s.startswith("/*", i):
+            i = s.index("*/", i) + 2; continue
+        else: out.append(c)
+        i += 1
+    return re.sub(r",(\s*[}\]])", r"\1", "".join(out))
+
+menu = {}
+for p in ("/usr/share/omarchy/default/omarchy/omarchy-menu.jsonc",
+          os.path.expanduser("~/.config/omarchy/extensions/omarchy-menu.jsonc")):
+    try:
+        for k, v in json.loads(strip_jsonc(open(p).read())).items():
+            menu[k] = {**menu.get(k, {}), **v}
+    except Exception as e:
+        print(f"{p}: {e}", file=sys.stderr)
+
+def ok(cond):
+    return subprocess.run(["bash", "-c", cond], capture_output=True, timeout=3).returncode == 0
+
+rows = []
+for id_, e in menu.items():
+    if not e.get("action") or e.get("provider"): continue
+    parts = id_.split("."); chain = []
+    for i in range(1, len(parts) + 1):
+        lab = menu.get(".".join(parts[:i]), {}).get("label")
+        if lab: chain.append(lab)
+    terms = list(e.get("aliases", []))
+    if e.get("description"): terms.append(e["description"])
+    when = e.get("when")
+    if when and not ok(when): continue
+    rows.append({"id": id_, "title": ": ".join(chain), "terms": terms, "action": e["action"]})
+json.dump(rows, sys.stdout)

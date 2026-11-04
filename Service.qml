@@ -174,7 +174,25 @@ Item {
     { id: "learn.keybindings", title: "Learn: Keybindings", terms: ["shortcuts", "hotkeys", "binds"], argv: ["omarchy-menu-keybindings"] }
   ]
 
-  function refreshLocalRows() {
+  // Every actionable leaf of the Omarchy menu (default + user extension),
+  // flattened by a script so new menu entries appear here without edits.
+  property var dynamicRoutes: []
+
+  Process {
+    id: menuRoutesProc
+    command: [Quickshell.env("HOME") + "/.config/omarchy/plugins/b.everything/scripts/omarchy-menu-routes"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        try {
+          root.dynamicRoutes = JSON.parse(text)
+          root.refreshLocalRows(true)
+        } catch (e) { console.warn("omarchy-menu-routes:", e) }
+      }
+    }
+  }
+
+  function refreshLocalRows(skipReload) {
+    if (skipReload !== true && !menuRoutesProc.running) menuRoutesProc.running = true
     var rows = []
     var entries = DesktopEntries.applications.values || []
     for (var i = 0; i < entries.length; i++) {
@@ -204,6 +222,21 @@ Item {
         iconHints: [],
         searchTerms: route.terms || [],
         local: { type: "exec", argv: route.argv }
+      })
+    }
+    var seen = {}
+    for (var h = 0; h < menuRoutes.length; h++) seen[menuRoutes[h].id] = true
+    for (var d = 0; d < dynamicRoutes.length; d++) {
+      var dr = dynamicRoutes[d]
+      if (!dr || seen[dr.id]) continue
+      rows.push({
+        id: "omarchy-menu:" + dr.id,
+        kind: "omarchy-menu",
+        provider: "Omarchy",
+        title: dr.title,
+        iconHints: [],
+        searchTerms: dr.terms || [],
+        local: { type: "exec", argv: ["bash", "-lc", dr.action] }
       })
     }
     localRows = rows

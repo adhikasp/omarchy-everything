@@ -223,6 +223,7 @@ PanelWindow {
       })
     } else {
       focusPrimeTimer.stop()
+      focusPrimeTimer.tries = 0
       focusPrimed = false
     }
     if (!bar) return
@@ -246,7 +247,24 @@ PanelWindow {
     // Exclusive phase imperceptibly short. This interval is covered by the
     // immediate hide/re-summon acceptance case.
     interval: 75
-    onTriggered: if (root.open) root.focusPrimed = true
+    // Only drop Exclusive once Qt actually holds keyboard focus in the panel.
+    // On a cold start (shell just launched, or first open after idle) the
+    // surface can take longer than 75 ms to be granted focus; releasing early
+    // left focus on the previous window (the Herdr terminal). Retry for up to
+    // ~1.2 s, then fall back to the old behaviour.
+    property int tries: 0
+    onTriggered: {
+      if (!root.open) return
+      var t = root.focusTarget
+      if (t && !t.activeFocus && tries < 16) {
+        tries += 1
+        t.forceActiveFocus()
+        restart()
+        return
+      }
+      tries = 0
+      root.focusPrimed = true
+    }
   }
 
   Timer {
