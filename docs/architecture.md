@@ -37,7 +37,8 @@ reset that gate so delegates appearing beneath a stationary pointer cannot
 change the highlighted thing.
 Opening captures the focused Hyprland window class once (`captureFocusContext`);
 `Model.contextLeadKind` maps it to a lead kind (Chrome → `browser-tab`, a terminal
-with Herdr agents present → `herdr-agent`, else none) that `rank` sorts first
+→ `herdr-agent`, else none; the helper has not scanned yet at that moment, so
+it cannot be consulted) that `rank` sorts first
 when the query is empty. A query restores the normal group order.
 The bar chevron remains inside the shell's standard `BarIconButton` slot. Its
 painted bounds are optically centered without shifting the widget geometry,

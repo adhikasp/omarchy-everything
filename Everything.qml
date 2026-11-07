@@ -5,6 +5,7 @@ import QtQuick.Controls
 import QtQuick.Effects
 import Quickshell
 import Quickshell.Hyprland
+import Quickshell.Wayland
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
@@ -23,7 +24,7 @@ Panel {
     appid: "omarchy-everything"
     name: "toggle"
     description: "Toggle Everything"
-    onPressed: root.toggle()
+    onPressed: { if (!root.opened) root.captureFocusContext(); root.toggle() }
   }
 
   readonly property var everythingService: root.bar && root.bar.shell
@@ -604,12 +605,9 @@ Panel {
   property string focusLeadKind: ""
 
   function captureFocusContext() {
-    var cls = ""
-    try {
-      var top = Hyprland.activeToplevel
-      cls = top && top.lastIpcObject ? String(top.lastIpcObject["class"] || "") : ""
-    } catch (e) { cls = "" }
-    focusLeadKind = Model.contextLeadKind(cls, everythingService ? everythingService.items : [])
+    var top = ToplevelManager.activeToplevel
+    var cls = top ? String(top.appId || "") : ""
+    focusLeadKind = Model.contextLeadKind(cls)
   }
 
   function rebuildRankedItems() {
