@@ -38,6 +38,16 @@ Arguments derived from titles, paths, sockets, or native IDs remain individual
 argv fields. The fixed Neovim expression receives only a validated integer
 buffer number; names are rechecked, not interpolated into Vimscript.
 
+## Instant answers
+
+Instant answers add the plugin's only network request (ECB exchange rates from
+a fixed HTTPS URL, on demand, cached, validated) and these subprocesses, all
+argv-only: `sh -c 'for z do … date +%z'` over the plugin's own zone names,
+`omarchy reminder`, `wl-copy`, `notify-send`, Omarchy's clipboard paste
+helper, `xdg-terminal-exec opencode`, and `opencode run` with the user's prompt
+as one argv entry. Agent output is untrusted and rendered only through
+`safeMarkdown`. Details: [Instant answers](instant-answers.md).
+
 ## Local sockets
 
 The following Unix sockets may be opened after ownership and socket-type

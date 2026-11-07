@@ -14,6 +14,8 @@ Follow the linked document for the boundary you are changing.
   for each supported application or container.
 - [Security and runtime access](docs/security.md) — subprocesses, sockets,
   `/proc`, local sockets, trust checks, and persistence limits.
+- [Instant answers](docs/instant-answers.md) — calculator, conversions,
+  time zones, timers, clipboard history and ask-opencode rows.
 - [Testing](docs/testing.md) — automated coverage, fixtures, smoke tests, and
   the manual acceptance matrix.
 - [README](README.md) — user-facing behavior, installation, controls, and
@@ -26,6 +28,7 @@ Follow the linked document for the boundary you are changing.
 | Plugin registration | `manifest.json` | Architecture |
 | Per-monitor panel, focus, and list state | `Everything.qml` | Architecture, Testing |
 | Pure ranking and reconciliation | `EverythingModel.js` | Architecture, Protocol |
+| Instant answers (pure parsers) | `InstantAnswers.js` | Instant answers, Security |
 | Shell-wide leases, helper process, and partial merges | `Service.qml` | Architecture, Protocol |
 | Helper process, scan orchestration, activation retry, native providers, process metadata | `rust/src/` | Architecture, Protocol, Providers, Security |
 | Thing identity and opaque tokens | `rust/src/model.rs` | Architecture, Protocol |

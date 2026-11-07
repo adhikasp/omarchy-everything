@@ -79,6 +79,14 @@ var ENTRY_ONLY_APP_GLYPHS = {
 // Keep order implicit in the array so headings, ranking, and the visibility
 // checklist cannot acquire separate ordering tables.
 var GROUP_CATALOG = [
+  // Instant answers sit above everything; built in QML from the query, never
+  // from the helper.
+  { kind: "calc", label: "Calculator", sectionLabel: "Calculator", icon: "\uf1ec", searchOnly: true },
+  { kind: "convert", label: "Conversion", sectionLabel: "Conversions", icon: "\uf0ec", searchOnly: true },
+  { kind: "time", label: "Time zone", sectionLabel: "Time zones", icon: "\uf017", searchOnly: true },
+  { kind: "timer", label: "Timer", sectionLabel: "Timers", icon: "\uf254", searchOnly: true },
+  { kind: "ask", label: "Ask opencode", sectionLabel: "Ask opencode", icon: "\udb81\udea9", searchOnly: true },
+  { kind: "clipboard", label: "Clipboard", sectionLabel: "Clipboard history", icon: "\uf0ea", searchOnly: true },
   { kind: "window", label: "Window", sectionLabel: "Windows", icon: "\uf2d0" },
   { kind: "browser-tab", label: "Browser tab", sectionLabel: "Browser tabs", icon: "\uf0ac" },
   { kind: "app-tab", label: "App tab", sectionLabel: "Application tabs", icon: "\uf24d" },
@@ -256,6 +264,128 @@ function fuzzyScore(haystack, needle) {
     total += termScore
   }
   return Math.min(6900, Math.floor(total / terms.length))
+}
+
+// --- match highlighting ----------------------------------------------------
+//
+// Titles come from windows, tabs and terminals, so they are untrusted. The
+// only markup that reaches the StyledText sink is the <b>/<font> wrapper built
+// here; every source character is escaped first.
+
+function escapeMarkup(value) {
+  return String(value === undefined || value === null ? "" : value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
+    .replace(/[\r\n\t]+/g, " ")
+}
+
+// Fold one UTF-16 unit the way normalized() folds a whole string, keeping a
+// one-to-one index map back to the original title.
+function foldChar(ch) {
+  var code = ch.charCodeAt(0)
+  if (code >= 0xd800 && code <= 0xdfff) return "\u0000"
+  if (/\s/.test(ch)) return " "
+  var text = ch.toLowerCase()
+  try {
+    text = text.normalize("NFKD").replace(/[̀-ͯ]/g, "")
+  } catch (_error) { }
+  return text.length > 0 ? text.charAt(0) : "\u0000"
+}
+
+function fuzzyPositions(hay, term) {
+  var n = hay.length
+  var m = term.length
+  if (m === 0 || m > n) return null
+  var ti = 0
+  var end = -1
+  for (var i = 0; i < n && ti < m; i++) {
+    if (hay.charAt(i) === term.charAt(ti)) {
+      ti += 1
+      if (ti === m) end = i
+    }
+  }
+  if (ti < m) return null
+  var start = end
+  ti = m - 1
+  for (var j = end; j >= 0 && ti >= 0; j--) {
+    if (hay.charAt(j) === term.charAt(ti)) {
+      ti -= 1
+      if (ti < 0) start = j
+    }
+  }
+  var positions = []
+  ti = 0
+  for (var k = start; k <= end && ti < m; k++) {
+    if (hay.charAt(k) === term.charAt(ti)) {
+      positions.push(k)
+      ti += 1
+    }
+  }
+  return positions
+}
+
+// Indices into `title` that the query matched: the whole phrase when it is a
+// substring, otherwise each term (substring first, then fuzzy). Empty when the
+// title does not match every term, e.g. a row found through its group name.
+function matchPositions(title, query) {
+  var source = String(title === undefined || title === null ? "" : title)
+  var q = normalized(query)
+  if (!q || !source) return []
+  var hay = ""
+  for (var i = 0; i < source.length; i++) hay += foldChar(source.charAt(i))
+
+  var marks = {}
+  var whole = hay.indexOf(q)
+  if (whole >= 0) {
+    for (var w = whole; w < whole + q.length; w++) marks[w] = true
+  } else {
+    var terms = q.split(" ")
+    for (var t = 0; t < terms.length; t++) {
+      var term = terms[t]
+      if (!term) continue
+      var at = hay.indexOf(term)
+      if (at >= 0) {
+        for (var c = at; c < at + term.length; c++) marks[c] = true
+        continue
+      }
+      var fuzzy = fuzzyPositions(hay, term)
+      if (!fuzzy) return []
+      for (var f = 0; f < fuzzy.length; f++) marks[fuzzy[f]] = true
+    }
+  }
+  var out = []
+  for (var p = 0; p < source.length; p++) {
+    if (marks[p] === true && hay.charAt(p) !== " " && hay.charAt(p) !== "\u0000")
+      out.push(p)
+  }
+  return out
+}
+
+// StyledText for a title with matched characters emphasised. `color` must be
+// a #rgb/#rrggbb/#aarrggbb literal; anything else falls back to bold only.
+function highlightMarkup(title, query, color) {
+  var source = String(title === undefined || title === null ? "" : title)
+  var positions = matchPositions(source, query)
+  if (positions.length === 0) return escapeMarkup(source)
+  var hex = String(color === undefined || color === null ? "" : color)
+  var safeColor = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(hex) ? hex : ""
+  var openTag = safeColor ? "<font color=\"" + safeColor + "\"><b>" : "<b>"
+  var closeTag = safeColor ? "</b></font>" : "</b>"
+  var hit = {}
+  for (var i = 0; i < positions.length; i++) hit[positions[i]] = true
+  var out = ""
+  var inside = false
+  for (var j = 0; j < source.length; j++) {
+    var marked = hit[j] === true
+    if (marked && !inside) { out += openTag; inside = true }
+    else if (!marked && inside) { out += closeTag; inside = false }
+    out += escapeMarkup(source.charAt(j))
+  }
+  if (inside) out += closeTag
+  return out
 }
 
 function stringList(value) {
@@ -576,6 +706,8 @@ function pathLeaf(value) {
 function vitalMetadata(item, breadcrumb, parentTitle) {
   if (!item) return ""
   var kind = String(item.kind || "")
+  // Instant answers (InstantAnswers.js) carry their own one-line context.
+  if (/^(?:calc|convert|time|timer|ask|clipboard)$/.test(kind)) return String(item.context || "")
   if (kind === "neovim-buffer") {
     var directoryLeaf = pathLeaf(item.context)
     return directoryLeaf || String(item.provider || "")

@@ -6,8 +6,10 @@ import QtQuick.Effects
 import Quickshell
 import Quickshell.Hyprland
 import qs.Commons
+import qs.Commons as Commons
 import qs.Ui
 import "EverythingModel.js" as Model
+import "InstantAnswers.js" as Answers
 
 Panel {
   id: root
@@ -36,13 +38,44 @@ Panel {
   readonly property var disabledKinds: Model.normalizeDisabledKinds(
     root.setting("disabledKinds", []))
   readonly property var checklistEntries: supportedGroups
-  readonly property color foreground: root.bar ? root.bar.foreground : Color.foreground
-  readonly property color dimForeground: Qt.darker(foreground, 1.55)
+  // Same palette as Omarchy's own launcher ([menu] in shell.toml), so the
+  // card reads as part of the OS on every theme. Secondary text is an alpha
+  // of the foreground, never Qt.darker(): on a light theme "darker" is louder.
+  readonly property color foreground: Commons.Color.menu.text
+  readonly property color dimForeground: Util.alpha(foreground, 0.6)
+  readonly property color faintForeground: Util.alpha(foreground, 0.4)
+  readonly property color hairlineColor: Util.alpha(foreground, 0.1)
+  readonly property color selectedFill: Commons.Color.menu.selectedBackground
+  readonly property color selectedText: Commons.Color.menu.selectedText
+  readonly property color accentColor: Commons.Color.accent
+  readonly property string matchColor: String(selectedText)
   // Launcher text runs larger than the OS default (user ask, 2026-11-04).
   readonly property real fontScale: 1.5
-  readonly property real rowHeight: Style.font.body * fontScale * 1.5
-  readonly property int sectionHeight: Style.space(24)
-  readonly property int groupChecklistRowHeight: Style.space(36)
+  // Words use a proportional UI face; the Nerd Font (Style.font.family)
+  // stays for icon glyphs and key caps. Inter when installed, else Noto Sans.
+  readonly property string uiFamily: {
+    var families = Qt.fontFamilies()
+    var wanted = ["Inter", "Inter Variable", "Noto Sans"]
+    for (var i = 0; i < wanted.length; i++)
+      if (families.indexOf(wanted[i]) >= 0) return wanted[i]
+    return "sans-serif"
+  }
+  readonly property int titlePx: Math.round(Style.font.body * fontScale)
+  readonly property int searchPx: Math.round(Style.font.heading * fontScale)
+  readonly property int metaPx: Math.round(Style.font.bodySmall * 1.3)
+  readonly property int iconPx: Math.round(Style.font.icon * fontScale)
+  readonly property int sectionPx: Math.round(Style.font.caption * 1.2)
+  readonly property int hintPx: Math.round(Style.font.caption * 1.25)
+  readonly property real rowHeight: Math.round(titlePx * 2.1)
+  readonly property int sectionHeight: Style.space(30)
+  readonly property int searchHeight: Math.round(searchPx * 2.3)
+  readonly property int rowInset: Style.space(10)
+  readonly property int iconBox: Style.space(30)
+  readonly property int groupChecklistRowHeight: Math.round(titlePx * 2.1)
+  readonly property bool listMode: resultList.activeFocus || keyCatcher.activeFocus
+  // Typing always re-targets the best match; a background refresh keeps the
+  // row you were on. "Typing" means the query differs from the last ranked one.
+  property string lastRankedQuery: ""
   readonly property string resultsMode: "results"
   readonly property string groupsMode: "groups"
   readonly property bool resultsModeOpen: root.opened && popupMode === resultsMode
@@ -228,6 +261,31 @@ Panel {
     resultList.forceActiveFocus()
   }
 
+  // While the card grows on open, ListView's follow-scroll keeps the first
+  // row in view but not its group heading, which then sits above the fold.
+  // For a moment after each open, a first-row selection rests at the top.
+  function pinTopIfFirst() {
+    // A background refresh restores its own scroll position; the index is
+    // transiently 0 while it does, which must not read as "first row".
+    // Only while typing: in browse mode the user owns the scroll position.
+    if (resultList.count <= 0 || resultUpdateInProgress || !searchField.activeFocus) return
+    if (resultList.currentIndex === Model.boundaryNavigableIndex(rankedItems, -1, collapsedKinds)
+        && resultList.contentY !== resultList.originY)
+      resultList.contentY = resultList.originY
+  }
+
+  Timer {
+    id: openPinTimer
+    property int ticks: 0
+    interval: 60
+    repeat: true
+    onTriggered: {
+      root.pinTopIfFirst()
+      ticks += 1
+      if (ticks >= 8) stop()
+    }
+  }
+
   function setCurrentIndex(index, reveal) {
     if (resultList.count <= 0 || rankedItems.length <= 0) {
       resultList.currentIndex = -1
@@ -240,7 +298,7 @@ Panel {
     if (reveal === true) revealSelection(bounded, false)
   }
 
-  function moveSelection(delta) {
+  function moveSelection(delta, keepSearchFocus) {
     if (resultList.count <= 0 || Number(delta || 0) === 0) return
     var direction = delta < 0 ? -1 : 1
     var steps = Math.max(1, Math.floor(Math.abs(Number(delta))))
@@ -252,6 +310,14 @@ Panel {
         rankedItems, candidate, direction, collapsedKinds)
       if (next === candidate) break
       candidate = next
+    }
+    if (keepSearchFocus === true) {
+      // Launcher behaviour: arrows move the highlight, typing keeps typing.
+      disarmPointer()
+      setCurrentIndex(candidate, true)
+      if (candidate === Model.boundaryNavigableIndex(rankedItems, -1, collapsedKinds))
+        resultList.contentY = resultList.originY
+      return
     }
     focusList(candidate)
   }
@@ -306,6 +372,19 @@ Panel {
     if (index < 0 || index >= rankedItems.length || !everythingService
         || !selectionIsVisibleRow(index)) return
     var target = rankedItems[index]
+    var local = target.local
+    if (Answers.isAnswerKind(target.kind)) {
+      if (!local) return
+      if (local.type === "ask") {
+        everythingService.ask(local.prompt, root.askWorkspace, root.askModel)
+        return
+      }
+      if (local.type === "query") {
+        searchField.text = String(local.text || "")
+        root.focusSearch()
+        return
+      }
+    }
     // Release the layer-shell keyboard grab before asking another surface to
     // accept focus. Service.qml keeps the helper alive for the pending action.
     root.close()
@@ -423,6 +502,8 @@ Panel {
     resultUpdateInProgress = false
     pendingSelectionSurvived = false
     applyOpenResultReset()
+    openPinTimer.ticks = 0
+    openPinTimer.restart()
     Qt.callLater(function() {
       if (!root.opened) return
       if (typeof resultList.forceLayout === "function") resultList.forceLayout()
@@ -440,14 +521,109 @@ Panel {
     })
   }
 
+  // --- instant answers and ask -------------------------------------------
+
+  readonly property string askWorkspace: String(root.setting("askWorkspace", "~"))
+  readonly property string askModel: String(root.setting("askModel", ""))
+  readonly property string askLabel: askWorkspace === "~" ? "home"
+    : askWorkspace.replace(/\/+$/, "").split("/").pop()
+  readonly property var askState: everythingService ? everythingService.askState : Answers.emptyAskState()
+  readonly property bool askRunning: askState.status === "running"
+  // The answer view is up while the query is exactly the prompt that was asked.
+  readonly property bool answerMode: popupMode === resultsMode && askState.status !== ""
+    && askPromptOf(searchField.text) === askState.prompt
+  property real askClock: Date.now()
+
+  function askPromptOf(text) {
+    var m = /^\s*(?:\?|ask\s)\s*([\s\S]*)$/i.exec(String(text || ""))
+    return m ? m[1].trim() : null
+  }
+
+  function answerContext() {
+    var svc = everythingService
+    var currencies = root.setting("currencies", ["USD", "EUR"])
+    return {
+      now: Date.now(),
+      disabledKinds: disabledKinds,
+      rates: svc ? svc.rates : null,
+      ratesError: svc ? svc.ratesError : "",
+      // Settings can arrive as a QVariantList, which is array-like, not an Array.
+      currencies: currencies && currencies.length > 0
+        ? Array.prototype.slice.call(currencies).map(String) : ["USD", "EUR"],
+      tzOffsets: svc ? svc.tzOffsets : null,
+      localZone: svc ? svc.localZone : "UTC",
+      clipboard: svc ? svc.clipboardHistory : null,
+      home: svc ? svc.homeDir : "",
+      reminders: svc ? svc.reminders : [],
+      askLabel: askLabel,
+      lastAsk: svc ? svc.lastAsk : null
+    }
+  }
+
+  function currentAnswerAction() {
+    var index = resultList.currentIndex
+    if (index < 0 || index >= rankedItems.length) return ""
+    var local = rankedItems[index].local
+    if (!local) return ""
+    var labels = { copy: "copy", "paste-clip": "paste", "paste-image": "paste",
+      ask: "ask", query: "show", exec: "start" }
+    if (local.type === "exec" && rankedItems[index].kind === "timer"
+        && String(rankedItems[index].id).indexOf("clear") >= 0) return "clear"
+    return labels[local.type] || ""
+  }
+
+  // Hint and status rows (e.g. "No reminders running") do nothing on Enter.
+  function currentRowInert() {
+    var index = resultList.currentIndex
+    if (index < 0 || index >= rankedItems.length) return false
+    var item = rankedItems[index]
+    return Answers.isAnswerKind(item.kind) && !item.local
+  }
+
+  function copyAnswer() {
+    if (!everythingService || !askState.answer) return
+    everythingService.copyText(askState.answer, "answer")
+    root.close()
+  }
+
+  function scrollAnswer(delta) {
+    var target = answerFlick.contentY + delta
+    answerFlick.contentY = Math.max(0, Math.min(target,
+      Math.max(0, answerFlick.contentHeight - answerFlick.height)))
+  }
+
+  Timer {
+    interval: 1000
+    repeat: true
+    running: root.askRunning && root.opened
+    onTriggered: root.askClock = Date.now()
+  }
+
   function rebuildRankedItems() {
     var nextItems = Model.rank(
       everythingService ? everythingService.items : [],
       searchField.text,
       everythingService ? everythingService.hiddenIds : {},
       disabledKinds)
-    if (Model.sameRankedItems(rankedItems, nextItems)) return
+    // Instant answers pin above every search result; prefix modes (ask,
+    // clipboard, timer) replace the search results entirely.
+    var answers = Answers.instantAnswers(searchField.text, answerContext())
+    if (everythingService && answers.needs) everythingService.ensureAnswerData(answers.needs)
+    nextItems = answers.exclusive ? answers.items : answers.items.concat(nextItems)
+    var retarget = searchField.text !== lastRankedQuery
+    lastRankedQuery = searchField.text
+    if (Model.sameRankedItems(rankedItems, nextItems)) {
+      if (retarget && rankedItems.length > 0 && !resultUpdateInProgress) {
+        setCurrentIndex(0, false)
+        resultList.contentY = resultList.originY
+      }
+      return
+    }
     if (!resultUpdateInProgress) rememberResultState()
+    if (retarget) {
+      selectedItemUuid = ""
+      savedSelectedOffset = 0
+    }
     disarmPointer()
     resultUpdateInProgress = true
     rankedItems = nextItems
@@ -605,6 +781,7 @@ Panel {
     ignoreUnknownSignals: true
     function onItemsChanged() { root.scheduleRankedItems() }
     function onHiddenIdsChanged() { root.scheduleRankedItems() }
+    function onAnswerRevisionChanged() { root.scheduleRankedItems() }
   }
 
   implicitWidth: button.implicitWidth
@@ -671,12 +848,63 @@ Panel {
       color: "transparent"
       radius: Style.cornerRadius
       border.width: Math.max(1, Style.normalBorderWidth)
-      border.color: Color.accent
+      border.color: Commons.Color.accent
+    }
+  }
+
+  readonly property var footerHints: popupMode === groupsMode
+    ? [{ key: "↑↓", label: "move" }, { key: "↵", label: "toggle" },
+       { key: "esc", label: "close" }]
+    : answerMode
+      ? (askRunning
+        ? [{ key: "esc", label: "back" }]
+        : [{ key: "↵", label: "copy" }, { key: "ctrl o", label: "open in opencode" },
+           { key: "↑↓", label: "scroll" }, { key: "esc", label: "back" }])
+    : rankedItems.length === 0
+      ? [{ key: "esc", label: searchField.text.length > 0 ? "clear" : "close" }]
+    : listMode
+      ? [{ key: "↑↓", label: "move" }, { key: "←→", label: "fold" },
+         { key: "↵", label: "open" }, { key: "del", label: "hide" },
+         { key: "/", label: "search" }]
+      : [{ key: "↑↓", label: "select" }]
+          .concat(root.currentRowInert() ? [] : [{ key: "↵", label: root.currentAnswerAction() || "open" }])
+          .concat([{ key: "tab", label: "browse" },
+            { key: "esc", label: searchField.text.length > 0 ? "clear" : "close" }])
+
+  readonly property int shownGroupCount: {
+    var shown = 0
+    for (var i = 0; i < checklistEntries.length; i++)
+      if (!kindDisabled(checklistEntries[i].kind)) shown += 1
+    return shown
+  }
+
+  // Small keyboard-key chip for the footer and the search line.
+  component KeyCap: Rectangle {
+    id: cap
+    property string label: ""
+    property color ink: Commons.Color.menu.text
+    property int pixelSize: Style.font.caption
+    implicitWidth: Math.max(implicitHeight, capText.implicitWidth + Style.space(10))
+    implicitHeight: Math.round(pixelSize * 1.75)
+    radius: Math.min(Style.cornerRadius, Style.space(4))
+    color: Util.alpha(ink, 0.06)
+    border.width: Style.spacing.hairline
+    border.color: Util.alpha(ink, 0.16)
+
+    Text {
+      id: capText
+      anchors.centerIn: parent
+      textFormat: Text.PlainText
+      text: cap.label
+      color: Util.alpha(cap.ink, 0.7)
+      font.family: Style.font.family
+      font.pixelSize: cap.pixelSize
     }
   }
 
   CenteredPanel {
     id: popup
+    objectName: "everything-popup"
     anchorItem: button
     owner: root
     bar: root.bar
@@ -684,14 +912,22 @@ Panel {
     focusTarget: root.popupMode === root.groupsMode ? groupList : searchField
     // Wide, centered card whose height follows its results (up to 60% of the
     // screen); the top edge stays put so typing never moves the search field.
-    readonly property real resultsDesiredHeight: popup.verticalContentInset
-      + searchField.height + Style.space(4)
-      + Math.max(resultList.contentHeight, Style.space(56))
+    readonly property real chromeHeight: popup.verticalContentInset
+      + root.searchHeight + Style.spacing.hairline + Style.space(6)
       + Style.space(6) + footer.implicitHeight
-    contentWidth: popup.fittedContentWidth(Style.space(720))
+    readonly property real resultsDesiredHeight: chromeHeight
+      + (root.rankedItems.length === 0 ? Style.space(150)
+        : Math.max(resultList.contentHeight, root.rowHeight))
+    readonly property real groupsDesiredHeight: chromeHeight + groupList.contentHeight
+    readonly property real answerDesiredHeight: chromeHeight + Style.space(10)
+      + answerHeader.height + Style.space(10) + answerFlick.contentHeight + Style.space(8)
+    contentWidth: popup.fittedContentWidth(Style.space(780))
     contentHeight: root.popupMode === root.groupsMode
-      ? popup.cappedContentHeight(Style.space(520))
-      : popup.cappedContentHeight(Math.max(Style.space(140),
+      ? popup.cappedContentHeight(Math.min(groupsDesiredHeight, popup.screenH * 0.6))
+      : root.answerMode
+      ? popup.cappedContentHeight(Math.max(Style.space(200),
+          Math.min(answerDesiredHeight, popup.screenH * 0.66)))
+      : popup.cappedContentHeight(Math.max(Style.space(160),
           Math.min(resultsDesiredHeight, popup.screenH * 0.6)))
 
     PanelKeyCatcher {
@@ -723,6 +959,11 @@ Panel {
         if (text === "/") root.focusSearch()
         else if (text === "g") root.focusBoundary(-1)
         else if (text === "G") root.focusBoundary(1)
+        else if (text.trim().length > 0) {
+          // Any other printable key while browsing goes back to typing.
+          searchField.text += text
+          root.focusSearch()
+        }
       }
 
       Item {
@@ -732,45 +973,203 @@ Panel {
         Accessible.name: root.popupMode === root.groupsMode
           ? "Everything group visibility panel" : "Everything search and switch panel"
 
-      TextField {
-        id: searchField
-        objectName: "everything-search"
+      // --- header: search line ------------------------------------------
+
+      Item {
+        id: searchHeader
+        objectName: "everything-search-header"
         anchors.top: parent.top
         anchors.left: parent.left
         anchors.right: parent.right
+        height: root.searchHeight
         visible: root.popupMode === root.resultsMode
-        enabled: visible
-        placeholderText: "Search windows, tabs, apps, menu…"
-        foreground: root.foreground
-        activeFocusOnTab: true
-        Accessible.role: Accessible.EditableText
-        Accessible.name: "Search things"
-        Accessible.description: "Type part of a title; characters may be spread out (fuzzy), or a group name"
-        Accessible.editable: true
-        Accessible.focusable: true
-        Accessible.focused: activeFocus
-        onActiveFocusChanged: if (activeFocus) root.disarmPointer()
-        onTextChanged: root.scheduleRankedItems()
 
-        Keys.priority: Keys.BeforeItem
-        Keys.onPressed: function(event) {
-          if (event.key === Qt.Key_Down || (event.key === Qt.Key_Tab
-              && (event.modifiers & Qt.ShiftModifier) === 0)) {
-            event.accepted = true
-            root.focusBoundary(-1)
-          } else if (event.key === Qt.Key_Escape) {
-            event.accepted = true
-            root.handleEscape()
-          } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
-            // Launcher behaviour: Enter opens the top (selected) result
-            // straight from the search box, no Tab into the list first.
-            event.accepted = true
-            if (resultList.currentIndex < 0 && resultList.count > 0)
-              root.setCurrentIndex(0, false)
-            root.activateCurrent()
+        Text {
+          id: searchGlyph
+          anchors.left: parent.left
+          anchors.leftMargin: root.rowInset
+          anchors.verticalCenter: parent.verticalCenter
+          width: root.iconBox
+          horizontalAlignment: Text.AlignHCenter
+          textFormat: Text.PlainText
+          text: ""
+          color: searchField.text.length > 0 ? root.selectedText : root.faintForeground
+          font.family: Style.font.family
+          font.pixelSize: root.iconPx
+        }
+
+        TextField {
+          id: searchField
+          objectName: "everything-search"
+          anchors.left: searchGlyph.right
+          anchors.leftMargin: Style.space(10)
+          anchors.right: clearHint.visible ? clearHint.left : parent.right
+          anchors.rightMargin: Style.space(10)
+          anchors.verticalCenter: parent.verticalCenter
+          visible: root.popupMode === root.resultsMode
+          enabled: visible
+          placeholderText: "Search windows, tabs, apps, menu…"
+          placeholderTextColor: root.faintForeground
+          foreground: root.foreground
+          accent: root.accentColor
+          font.family: root.uiFamily
+          font.pixelSize: root.searchPx
+          leftPadding: 0
+          rightPadding: 0
+          topPadding: 0
+          bottomPadding: 0
+          background: Item {}
+          activeFocusOnTab: true
+          Accessible.role: Accessible.EditableText
+          Accessible.name: "Search things"
+          Accessible.description: "Type part of a title; characters may be spread out (fuzzy), or a group name"
+          Accessible.editable: true
+          Accessible.focusable: true
+          Accessible.focused: activeFocus
+          onActiveFocusChanged: if (activeFocus) root.disarmPointer()
+          onTextChanged: root.scheduleRankedItems()
+
+          Keys.priority: Keys.BeforeItem
+          Keys.onPressed: function(event) {
+            var ctrl = (event.modifiers & Qt.ControlModifier) !== 0
+            if (root.answerMode) {
+              var step = Math.round(root.titlePx * 3)
+              if (event.key === Qt.Key_Down) { event.accepted = true; root.scrollAnswer(step); return }
+              if (event.key === Qt.Key_Up) { event.accepted = true; root.scrollAnswer(-step); return }
+              if (event.key === Qt.Key_PageDown) { event.accepted = true; root.scrollAnswer(answerFlick.height * 0.9); return }
+              if (event.key === Qt.Key_PageUp) { event.accepted = true; root.scrollAnswer(-answerFlick.height * 0.9); return }
+              if (ctrl && event.key === Qt.Key_O) {
+                event.accepted = true
+                if (root.everythingService && root.askState.sessionId) {
+                  root.everythingService.openAskInOpencode()
+                  root.close()
+                }
+                return
+              }
+              if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                event.accepted = true
+                if (!root.askRunning) root.copyAnswer()
+                return
+              }
+            }
+            if (event.key === Qt.Key_Down || (ctrl && event.key === Qt.Key_N)) {
+              event.accepted = true
+              root.moveSelection(1, true)
+            } else if (event.key === Qt.Key_Up || (ctrl && event.key === Qt.Key_P)) {
+              event.accepted = true
+              root.moveSelection(-1, true)
+            } else if (event.key === Qt.Key_PageDown) {
+              event.accepted = true
+              root.moveSelection(root.pageDelta(1), true)
+            } else if (event.key === Qt.Key_PageUp) {
+              event.accepted = true
+              root.moveSelection(root.pageDelta(-1), true)
+            } else if (event.key === Qt.Key_Tab && (event.modifiers & Qt.ShiftModifier) === 0) {
+              // Browse mode keeps the row you were on.
+              event.accepted = true
+              root.focusList(resultList.currentIndex < 0 ? 0 : resultList.currentIndex)
+            } else if (event.key === Qt.Key_Escape) {
+              event.accepted = true
+              root.handleEscape()
+            } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+              // Launcher behaviour: Enter opens the highlighted result
+              // straight from the search box.
+              event.accepted = true
+              if (resultList.currentIndex < 0 && resultList.count > 0)
+                root.setCurrentIndex(0, false)
+              root.activateCurrent()
+            }
+          }
+        }
+
+        Row {
+          id: clearHint
+          anchors.right: parent.right
+          anchors.rightMargin: root.rowInset
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.space(6)
+          visible: searchField.text.length > 0
+
+          KeyCap {
+            anchors.verticalCenter: parent.verticalCenter
+            label: "esc"
+            ink: root.foreground
+            pixelSize: root.hintPx
+          }
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            text: "clear"
+            color: root.faintForeground
+            font.family: root.uiFamily
+            font.pixelSize: root.hintPx
           }
         }
       }
+
+      // --- header: group checklist ---------------------------------------
+
+      Item {
+        id: groupHeader
+        objectName: "everything-groups-header"
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        height: root.searchHeight
+        visible: root.popupMode === root.groupsMode
+
+        Text {
+          id: groupHeaderGlyph
+          anchors.left: parent.left
+          anchors.leftMargin: root.rowInset
+          anchors.verticalCenter: parent.verticalCenter
+          width: root.iconBox
+          horizontalAlignment: Text.AlignHCenter
+          textFormat: Text.PlainText
+          text: ""
+          color: root.selectedText
+          font.family: Style.font.family
+          font.pixelSize: root.iconPx
+        }
+
+        Text {
+          anchors.left: groupHeaderGlyph.right
+          anchors.leftMargin: Style.space(10)
+          anchors.verticalCenter: parent.verticalCenter
+          textFormat: Text.PlainText
+          text: "Show in Everything"
+          color: root.foreground
+          font.family: root.uiFamily
+          font.pixelSize: root.titlePx
+          font.weight: Font.Medium
+        }
+
+        Text {
+          anchors.right: parent.right
+          anchors.rightMargin: root.rowInset
+          anchors.verticalCenter: parent.verticalCenter
+          textFormat: Text.PlainText
+          text: root.shownGroupCount + " of " + root.checklistEntries.length
+          color: root.faintForeground
+          font.family: root.uiFamily
+          font.pixelSize: root.metaPx
+        }
+      }
+
+      Rectangle {
+        id: headerDivider
+        objectName: "everything-header-divider"
+        anchors.top: parent.top
+        anchors.topMargin: root.searchHeight
+        anchors.left: parent.left
+        anchors.leftMargin: -popup.padding
+        anchors.right: parent.right
+        anchors.rightMargin: -popup.padding
+        height: Style.spacing.hairline
+        color: root.hairlineColor
+      }
+
+      // --- footer: key hints + count -------------------------------------
 
       Item {
         id: footer
@@ -778,58 +1177,136 @@ Panel {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        visible: root.popupMode === root.resultsMode
-        implicitHeight: visible ? Style.space(24) : 0
+        implicitHeight: Style.space(22)
         height: implicitHeight
+        // Centre the hints between the hairline and the card's bottom edge.
+        readonly property real centerOffset: popup.padding / 2
 
-        Text {
+        Rectangle {
+          anchors.top: parent.top
           anchors.left: parent.left
-          anchors.leftMargin: Style.space(8)
+          anchors.leftMargin: -popup.padding
+          anchors.right: parent.right
+          anchors.rightMargin: -popup.padding
+          height: Style.spacing.hairline
+          color: root.hairlineColor
+        }
+
+        Row {
+          id: hintRow
+          anchors.left: parent.left
+          anchors.leftMargin: root.rowInset
           anchors.verticalCenter: parent.verticalCenter
-          text: "\u21b5 open   \u21e5 list   / search   \u232b hide   esc close"
-          color: root.dimForeground
-          font.family: Style.font.family
-          font.pixelSize: (Style.font.caption * root.fontScale)
+          anchors.verticalCenterOffset: footer.centerOffset
+          spacing: Style.space(14)
+
+          Repeater {
+            model: root.footerHints
+
+            delegate: Row {
+              id: hint
+              required property var modelData
+              spacing: Style.space(6)
+
+              KeyCap {
+                anchors.verticalCenter: parent.verticalCenter
+                label: hint.modelData.key
+                ink: root.foreground
+                pixelSize: root.hintPx
+              }
+              Text {
+                anchors.verticalCenter: parent.verticalCenter
+                textFormat: Text.PlainText
+                text: hint.modelData.label
+                color: root.faintForeground
+                font.family: root.uiFamily
+                font.pixelSize: root.hintPx
+              }
+            }
+          }
         }
 
         Text {
           anchors.right: parent.right
-          anchors.rightMargin: Style.space(8)
+          anchors.rightMargin: root.rowInset
           anchors.verticalCenter: parent.verticalCenter
-          text: root.rankedItems.length + (root.rankedItems.length === 1 ? " result" : " results")
-          color: root.dimForeground
-          font.family: Style.font.family
-          font.pixelSize: (Style.font.caption * root.fontScale)
+          anchors.verticalCenterOffset: footer.centerOffset
+          visible: root.popupMode === root.resultsMode
+          textFormat: Text.PlainText
+          text: root.rankedItems.length === 0 && root.everythingService
+              && root.everythingService.scanning
+            ? "Looking…"
+            : root.rankedItems.length + (root.rankedItems.length === 1 ? " result" : " results")
+          color: root.faintForeground
+          font.family: root.uiFamily
+          font.pixelSize: root.hintPx
         }
       }
 
-      Text {
+      // --- empty state ---------------------------------------------------
+
+      Column {
         id: emptyState
         objectName: "everything-empty"
         anchors.horizontalCenter: parent.horizontalCenter
-        anchors.top: searchField.bottom
-        anchors.topMargin: Style.space(20)
+        anchors.verticalCenter: resultList.verticalCenter
+        width: Math.min(parent.width - root.rowInset * 2, Style.space(460))
+        spacing: Style.space(8)
         visible: root.popupMode === root.resultsMode && root.rankedItems.length === 0
-        text: searchField.text.length > 0
-          ? "No matches for \u201c" + searchField.text + "\u201d"
-          : "Nothing open yet\u2026"
-        color: root.dimForeground
-        font.family: Style.font.family
-        font.pixelSize: (Style.font.body * root.fontScale)
+          && !root.answerMode
         Accessible.role: Accessible.StaticText
-        Accessible.name: text
+        Accessible.name: emptyTitle.text
+
+        Text {
+          width: parent.width
+          horizontalAlignment: Text.AlignHCenter
+          textFormat: Text.PlainText
+          text: searchField.text.length > 0 ? "" : ""
+          color: root.faintForeground
+          font.family: Style.font.family
+          font.pixelSize: Style.font.displayLarge
+        }
+
+        Text {
+          id: emptyTitle
+          width: parent.width
+          horizontalAlignment: Text.AlignHCenter
+          textFormat: Text.PlainText
+          text: searchField.text.length > 0
+            ? "No matches for “" + searchField.text + "”"
+            : "Nothing open yet"
+          color: root.dimForeground
+          font.family: root.uiFamily
+          font.pixelSize: root.titlePx
+          elide: Text.ElideMiddle
+        }
+
+        Text {
+          width: parent.width
+          horizontalAlignment: Text.AlignHCenter
+          textFormat: Text.PlainText
+          text: searchField.text.length > 0
+            ? "Try fewer letters, or a group name like “tabs”"
+            : "Type to search apps and the Omarchy menu"
+          color: root.faintForeground
+          font.family: root.uiFamily
+          font.pixelSize: root.metaPx
+          wrapMode: Text.WordWrap
+        }
       }
+
+      // --- results -------------------------------------------------------
 
       ListView {
         id: resultList
         objectName: "everything-results"
-        anchors.top: searchField.bottom
-        anchors.topMargin: Style.space(4)
+        anchors.top: headerDivider.bottom
+        anchors.topMargin: Style.space(6)
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: footer.top
         anchors.bottomMargin: Style.space(6)
-        visible: root.popupMode === root.resultsMode
+        visible: root.popupMode === root.resultsMode && !root.answerMode
         enabled: visible
         clip: true
         model: root.rankedItems
@@ -853,8 +1330,7 @@ Panel {
           width: ListView.view.width
           height: root.sectionHeight
           readonly property bool collapsed: root.groupCollapsed(section)
-          readonly property bool highlighted: collapsed
-            && (resultList.activeFocus || keyCatcher.activeFocus)
+          readonly property bool highlighted: collapsed && root.resultsModeOpen
             && root.currentGroupKind() === section
 
           Accessible.role: Accessible.Heading
@@ -866,41 +1342,57 @@ Panel {
 
           Rectangle {
             anchors.fill: parent
-            anchors.bottomMargin: Style.space(1)
+            anchors.topMargin: Style.space(4)
             radius: Style.cornerRadius
-            color: sectionHeading.highlighted
-              ? Style.focusFillFor(root.foreground, Color.accent)
-              : "transparent"
+            color: sectionHeading.highlighted ? root.selectedFill : "transparent"
+          }
+
+          Text {
+            id: sectionLabel
+            anchors.left: parent.left
+            anchors.leftMargin: root.rowInset + Style.space(2)
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: Style.space(6)
+            textFormat: Text.PlainText
+            text: Model.kindSectionLabel(sectionHeading.section).toUpperCase()
+            color: sectionHeading.highlighted ? root.selectedText : root.faintForeground
+            font.family: root.uiFamily
+            font.pixelSize: root.sectionPx
+            font.weight: Font.Medium
+            font.letterSpacing: Style.spaceReal(0.9)
+          }
+
+          Text {
+            anchors.left: sectionLabel.right
+            anchors.leftMargin: Style.space(8)
+            anchors.baseline: sectionLabel.baseline
+            textFormat: Text.PlainText
+            // A single instant answer needs no count.
+            visible: ["calc", "convert", "time", "ask", "timer"].indexOf(sectionHeading.section) < 0
+            text: root.kindCount(sectionHeading.section)
+            color: root.faintForeground
+            font.family: root.uiFamily
+            font.features: { "tnum": 1 }
+            font.pixelSize: root.sectionPx
           }
 
           Text {
             id: sectionDisclosure
-            anchors.left: parent.left
-            anchors.leftMargin: Style.space(8)
-            anchors.verticalCenter: parent.verticalCenter
-            text: sectionHeading.collapsed ? "\uf054" : "\uf078"
-            color: sectionHeading.highlighted ? root.foreground : root.dimForeground
-            font.family: Style.font.family
-            font.pixelSize: (Style.font.caption * root.fontScale)
-          }
-
-          Text {
-            anchors.left: sectionDisclosure.right
-            anchors.leftMargin: Style.space(6)
             anchors.right: parent.right
-            anchors.rightMargin: Style.space(8)
-            anchors.verticalCenter: parent.verticalCenter
-            text: Model.kindSectionLabel(sectionHeading.section)
-              + "  \u00b7  " + root.kindCount(sectionHeading.section)
-            color: root.dimForeground
+            anchors.rightMargin: root.rowInset
+            anchors.verticalCenter: sectionLabel.verticalCenter
+            visible: sectionHeading.collapsed || headingMouse.containsMouse
+            textFormat: Text.PlainText
+            text: sectionHeading.collapsed ? "" : ""
+            color: sectionHeading.highlighted ? root.selectedText : root.faintForeground
             font.family: Style.font.family
-            font.pixelSize: (Style.font.caption * root.fontScale)
-            font.bold: true
-            elide: Text.ElideRight
+            font.pixelSize: Math.round(root.sectionPx * 0.85)
           }
 
           MouseArea {
+            id: headingMouse
             anchors.fill: parent
+            hoverEnabled: true
             cursorShape: Qt.PointingHandCursor
             onClicked: root.toggleGroupFromHeading(sectionHeading.section)
           }
@@ -921,8 +1413,8 @@ Panel {
           policy: ScrollBar.AsNeeded
           leftPadding: Style.space(4)
           rightPadding: 0
-          palette.mid: Color.accent
-          palette.dark: Color.accent
+          palette.mid: Commons.Color.accent
+          palette.dark: Commons.Color.accent
         }
 
         delegate: Item {
@@ -934,9 +1426,13 @@ Panel {
           visible: !groupCollapsed
           enabled: !groupCollapsed
           readonly property bool groupCollapsed: root.groupCollapsed(modelData.kind)
-          readonly property bool highlighted: !groupCollapsed && (root.pointerCursorActive
-              || resultList.activeFocus || keyCatcher.activeFocus)
+          readonly property bool isAnswer: Answers.isAnswerKind(modelData.kind)
+          readonly property bool emphasis: modelData.emphasis === true
+          readonly property string thumbnail: String(modelData.thumbnail || "")
+          // The highlight is always shown: Enter in the search line opens it.
+          readonly property bool highlighted: !groupCollapsed && root.resultsModeOpen
             && resultList.currentIndex === index
+          readonly property color iconColor: highlighted ? root.selectedText : root.dimForeground
           readonly property string crumb: root.breadcrumb(modelData)
           readonly property string metadata: Model.metadataForItem(
             modelData, root.itemRelations)
@@ -960,27 +1456,49 @@ Panel {
 
           Rectangle {
             anchors.fill: parent
-            anchors.bottomMargin: Style.space(1)
             radius: Style.cornerRadius
-            color: row.highlighted
-              ? Style.focusFillFor(root.foreground, Color.accent)
-              : "transparent"
+            color: row.highlighted ? root.selectedFill : "transparent"
+          }
+
+          Rectangle {
+            objectName: "everything-row-marker-" + row.index
+            anchors.left: parent.left
+            anchors.verticalCenter: parent.verticalCenter
+            width: Style.space(3)
+            height: Math.round(parent.height * 0.46)
+            radius: width / 2
+            color: root.selectedText
+            visible: row.highlighted
           }
 
           Item {
             id: thingIcon
             anchors.left: parent.left
-            anchors.leftMargin: Style.space(8)
-            width: Style.space(24)
+            anchors.leftMargin: root.rowInset
+            width: root.iconBox
             height: parent.height
             Accessible.role: Accessible.Graphic
             Accessible.name: Model.kindLabel(row.modelData.kind) + " icon"
 
             Image {
+              objectName: "everything-thumbnail-" + row.index
+              anchors.centerIn: parent
+              width: parent.width
+              height: Math.round(root.rowHeight * 0.72)
+              visible: row.thumbnail.length > 0 && status === Image.Ready
+              source: row.thumbnail
+              fillMode: Image.PreserveAspectCrop
+              asynchronous: true
+              smooth: true
+              sourceSize.width: width * Screen.devicePixelRatio
+              sourceSize.height: height * Screen.devicePixelRatio
+            }
+
+            Image {
               id: applicationIcon
               objectName: "everything-window-icon-" + row.index
               anchors.centerIn: parent
-              width: Math.min(parent.width, (Style.font.icon * root.fontScale))
+              width: Math.min(parent.width, root.iconPx + Style.space(2))
               height: width
               visible: row.windowAppGlyph.length === 0
                 && row.windowIconSource.length > 0 && status !== Image.Error
@@ -988,13 +1506,15 @@ Panel {
               fillMode: Image.PreserveAspectFit
               asynchronous: true
               smooth: true
-              sourceSize.width: width
-              sourceSize.height: height
+              mipmap: true
+              // Decode at physical pixels; a logical-size decode is blurry on HiDPI.
+              sourceSize.width: width * Screen.devicePixelRatio
+              sourceSize.height: height * Screen.devicePixelRatio
               // App launcher icons keep their own colors; window icons are tinted.
               layer.enabled: visible && row.modelData.kind !== "app"
               layer.effect: MultiEffect {
                 colorization: 1.0
-                colorizationColor: row.highlighted ? root.foreground : root.dimForeground
+                colorizationColor: row.iconColor
               }
             }
 
@@ -1004,43 +1524,62 @@ Panel {
               anchors.fill: parent
               visible: row.windowAppGlyph.length > 0
               text: row.windowAppGlyph
-              color: row.highlighted ? root.foreground : root.dimForeground
+              color: row.iconColor
               fontFamily: Style.font.family
-              fontSize: (Style.font.icon * root.fontScale)
+              fontSize: root.iconPx
             }
 
             Text {
               id: fallbackThingIcon
               anchors.fill: parent
               visible: row.windowAppGlyph.length === 0 && !applicationIcon.visible
+                && row.thumbnail.length === 0
+              textFormat: Text.PlainText
               text: Model.kindIcon(row.modelData.kind)
-              color: row.highlighted ? root.foreground : root.dimForeground
+              color: row.iconColor
               font.family: Style.font.family
-              font.pixelSize: (Style.font.icon * root.fontScale)
+              font.pixelSize: root.iconPx
               horizontalAlignment: Text.AlignHCenter
               verticalAlignment: Text.AlignVCenter
             }
           }
 
+          Text {
+            id: returnHint
+            anchors.right: parent.right
+            anchors.rightMargin: root.rowInset
+            anchors.baseline: titleLabel.baseline
+            width: Style.space(16)
+            horizontalAlignment: Text.AlignRight
+            textFormat: Text.PlainText
+            text: "↵"
+            color: root.selectedText
+            opacity: row.highlighted && !(row.isAnswer && !row.modelData.local) ? 0.9 : 0
+            font.family: Style.font.family
+            font.pixelSize: root.metaPx
+          }
+
           TextMetrics {
             id: metadataMetrics
             text: row.metadata
-            font.family: Style.font.family
-            font.pixelSize: (Style.font.caption * root.fontScale)
+            font.family: root.uiFamily
+            font.pixelSize: root.metaPx
           }
 
           Text {
             id: metadataLabel
             objectName: "everything-metadata-" + row.index
-            anchors.right: parent.right
-            anchors.rightMargin: Style.space(8)
-            anchors.verticalCenter: parent.verticalCenter
+            anchors.right: returnHint.left
+            anchors.rightMargin: Style.space(10)
+            // Share the title's baseline so mixed sizes read as one line.
+            anchors.baseline: titleLabel.baseline
             visible: text.length > 0
-            width: visible ? Math.min(metadataMetrics.advanceWidth, resultList.width * 0.4) : 0
+            width: visible ? Math.min(metadataMetrics.advanceWidth + 1, resultList.width * 0.36) : 0
+            textFormat: Text.PlainText
             text: row.metadata
-            color: root.dimForeground
-            font.family: Style.font.family
-            font.pixelSize: (Style.font.caption * root.fontScale)
+            color: row.highlighted ? root.dimForeground : root.faintForeground
+            font.family: root.uiFamily
+            font.pixelSize: root.metaPx
             horizontalAlignment: Text.AlignRight
             elide: Text.ElideMiddle
             Accessible.role: Accessible.StaticText
@@ -1049,17 +1588,23 @@ Panel {
 
           Text {
             id: titleLabel
+            objectName: "everything-title-" + row.index
             anchors.left: thingIcon.right
-            anchors.leftMargin: Style.space(6)
+            anchors.leftMargin: Style.space(10)
             anchors.right: metadataLabel.left
-            anchors.rightMargin: metadataLabel.visible ? Style.space(10) : 0
+            anchors.rightMargin: metadataLabel.visible ? Style.space(16) : 0
             anchors.verticalCenter: parent.verticalCenter
-            text: String(row.modelData.title || "Untitled")
-            color: root.foreground
-            font.family: Style.font.family
-            font.pixelSize: (Style.font.body * root.fontScale)
-            lineHeightMode: Text.FixedHeight
-            lineHeight: root.rowHeight
+            // Escaped by Model.highlightMarkup; only its own <b>/<font> tags remain.
+            textFormat: Text.StyledText
+            text: Model.highlightMarkup(row.modelData.title || "Untitled",
+              row.modelData.highlightQuery !== undefined ? String(row.modelData.highlightQuery)
+                : (row.isAnswer ? "" : searchField.text), root.matchColor)
+            color: row.highlighted ? root.selectedText : root.foreground
+            font.family: root.uiFamily
+            font.pixelSize: row.emphasis ? Math.round(root.titlePx * 1.15) : root.titlePx
+            font.weight: row.emphasis ? Font.Medium : Font.Normal
+            font.features: row.emphasis ? { "tnum": 1 } : {}
+            maximumLineCount: 1
             elide: Text.ElideRight
           }
 
@@ -1084,11 +1629,160 @@ Panel {
         }
       }
 
+      // Scroll scrims: fade rows into the card at whichever edge hides more.
+      Rectangle {
+        anchors.top: resultList.top
+        anchors.left: resultList.left
+        anchors.right: resultList.right
+        anchors.rightMargin: Style.space(8)
+        height: Math.min(Style.space(24), resultList.height / 2)
+        visible: resultList.visible && opacity > 0
+        opacity: resultList.contentHeight > resultList.height
+          ? Math.max(0, Math.min(1, (resultList.contentY - resultList.originY) / height))
+          : 0
+        gradient: Gradient {
+          GradientStop { position: 0; color: popup.cardColor }
+          GradientStop { position: 1; color: Util.alpha(popup.cardColor, 0) }
+        }
+      }
+
+      Rectangle {
+        anchors.bottom: resultList.bottom
+        anchors.left: resultList.left
+        anchors.right: resultList.right
+        anchors.rightMargin: Style.space(8)
+        height: Math.min(Style.space(24), resultList.height / 2)
+        visible: resultList.visible && opacity > 0
+        opacity: resultList.contentHeight > resultList.height
+          ? Math.max(0, Math.min(1, (resultList.originY + resultList.contentHeight
+              - resultList.height - resultList.contentY) / height))
+          : 0
+        gradient: Gradient {
+          GradientStop { position: 0; color: Util.alpha(popup.cardColor, 0) }
+          GradientStop { position: 1; color: popup.cardColor }
+        }
+      }
+
+      // --- ask: answer view ----------------------------------------------
+
+      Item {
+        id: answerView
+        objectName: "everything-answer"
+        anchors.top: headerDivider.bottom
+        anchors.topMargin: Style.space(10)
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: footer.top
+        anchors.bottomMargin: Style.space(8)
+        visible: root.answerMode
+
+        Item {
+          id: answerHeader
+          anchors.top: parent.top
+          anchors.left: parent.left
+          anchors.right: parent.right
+          height: Math.round(root.metaPx * 1.8)
+
+          Text {
+            id: answerGlyph
+            anchors.left: parent.left
+            anchors.leftMargin: root.rowInset
+            anchors.verticalCenter: parent.verticalCenter
+            width: root.iconBox
+            horizontalAlignment: Text.AlignHCenter
+            textFormat: Text.PlainText
+            text: Model.kindIcon("ask")
+            color: root.selectedText
+            font.family: Style.font.family
+            font.pixelSize: root.iconPx
+          }
+
+          Text {
+            anchors.left: answerGlyph.right
+            anchors.leftMargin: Style.space(10)
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            text: "opencode · " + root.askLabel
+            color: root.dimForeground
+            font.family: root.uiFamily
+            font.pixelSize: root.metaPx
+            font.weight: Font.Medium
+          }
+
+          Text {
+            anchors.right: parent.right
+            anchors.rightMargin: root.rowInset
+            anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
+            text: {
+              var st = root.askState
+              var started = Number(st.startedAt || 0)
+              if (st.status === "running") {
+                var secs = Math.max(0, Math.round((root.askClock - started) / 1000))
+                return (st.tool ? "using " + st.tool : "thinking") + "… " + secs + "s"
+              }
+              var took = Math.max(0, (Number(st.finishedAt || 0) - started) / 1000)
+              if (st.status === "error") return "failed"
+              if (st.status === "cancelled") return "cancelled"
+              return "answered in " + took.toFixed(1) + "s"
+                + (st.cost > 0 ? " · $" + Number(st.cost).toFixed(4) : "")
+            }
+            color: root.faintForeground
+            font.family: root.uiFamily
+            font.pixelSize: root.hintPx
+            font.features: { "tnum": 1 }
+          }
+        }
+
+        Flickable {
+          id: answerFlick
+          anchors.top: answerHeader.bottom
+          anchors.topMargin: Style.space(10)
+          anchors.left: parent.left
+          anchors.leftMargin: root.rowInset + root.iconBox + Style.space(10)
+          anchors.right: parent.right
+          anchors.rightMargin: root.rowInset
+          anchors.bottom: parent.bottom
+          clip: true
+          contentWidth: width
+          contentHeight: answerText.implicitHeight
+          boundsBehavior: Flickable.StopAtBounds
+          ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+          Text {
+            id: answerText
+            objectName: "everything-answer-text"
+            width: answerFlick.width - Style.space(8)
+            // Untrusted model output: Answers.safeMarkdown strips images and
+            // escapes raw HTML before it reaches the Markdown sink.
+            textFormat: root.askState.answer ? Text.MarkdownText : Text.PlainText
+            text: root.askState.answer
+              ? Answers.safeMarkdown(root.askState.answer)
+              : (root.askState.status === "error" ? String(root.askState.error || "Something went wrong")
+                : (root.askState.status === "running" ? "Thinking…" : "No answer"))
+            color: root.askState.answer ? root.foreground
+              : (root.askState.status === "error" ? Commons.Color.urgent : root.faintForeground)
+            wrapMode: Text.Wrap
+            font.family: root.uiFamily
+            font.pixelSize: Math.round(root.titlePx * 0.9)
+            lineHeight: 1.25
+            onLinkActivated: function(link) {
+              if (/^https?:\/\//i.test(String(link))) Qt.openUrlExternally(link)
+            }
+          }
+        }
+      }
+
+      // --- group checklist -----------------------------------------------
+
       ListView {
         id: groupList
         objectName: "everything-groups"
-        anchors.fill: parent
-        anchors.topMargin: Style.space(4)
+        anchors.top: headerDivider.bottom
+        anchors.topMargin: Style.space(6)
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: footer.top
         anchors.bottomMargin: Style.space(6)
         visible: root.popupMode === root.groupsMode
         enabled: visible
@@ -1109,8 +1803,8 @@ Panel {
           policy: ScrollBar.AsNeeded
           leftPadding: Style.space(4)
           rightPadding: 0
-          palette.mid: Color.accent
-          palette.dark: Color.accent
+          palette.mid: Commons.Color.accent
+          palette.dark: Commons.Color.accent
         }
 
         delegate: Item {
@@ -1121,8 +1815,7 @@ Panel {
           width: groupList.width
           height: root.groupChecklistRowHeight
           readonly property bool checked: !root.kindDisabled(modelData.kind)
-          readonly property bool highlighted: groupList.currentIndex === index
-            && (groupList.activeFocus || keyCatcher.activeFocus)
+          readonly property bool highlighted: groupList.currentIndex === index && root.opened
 
           function activate() {
             root.setGroupChecklistIndex(index)
@@ -1142,50 +1835,62 @@ Panel {
 
           Rectangle {
             anchors.fill: parent
-            anchors.bottomMargin: Style.space(1)
             radius: Style.cornerRadius
-            color: groupRow.highlighted
-              ? Style.focusFillFor(root.foreground, Color.accent)
-              : "transparent"
+            color: groupRow.highlighted ? root.selectedFill : "transparent"
           }
 
-          Text {
-            id: groupCheckmark
+          Rectangle {
             anchors.left: parent.left
-            anchors.leftMargin: Style.space(8)
             anchors.verticalCenter: parent.verticalCenter
-            width: Style.space(24)
-            text: groupRow.checked ? "\uf14a" : "\uf0c8"
-            color: groupRow.checked ? Color.accent : root.dimForeground
-            font.family: Style.font.family
-            font.pixelSize: (Style.font.body * root.fontScale)
-            horizontalAlignment: Text.AlignHCenter
+            width: Style.space(3)
+            height: Math.round(parent.height * 0.46)
+            radius: width / 2
+            color: root.selectedText
+            visible: groupRow.highlighted
           }
 
           Text {
             id: groupIcon
-            anchors.left: groupCheckmark.right
-            anchors.leftMargin: Style.space(6)
+            anchors.left: parent.left
+            anchors.leftMargin: root.rowInset
             anchors.verticalCenter: parent.verticalCenter
-            width: Style.space(24)
+            width: root.iconBox
+            textFormat: Text.PlainText
             text: groupRow.modelData.icon
-            color: groupRow.highlighted ? root.foreground : root.dimForeground
+            color: groupRow.highlighted ? root.selectedText
+              : (groupRow.checked ? root.dimForeground : root.faintForeground)
             font.family: Style.font.family
-            font.pixelSize: (Style.font.icon * root.fontScale)
+            font.pixelSize: root.iconPx
             horizontalAlignment: Text.AlignHCenter
           }
 
           Text {
             anchors.left: groupIcon.right
-            anchors.leftMargin: Style.space(8)
-            anchors.right: parent.right
-            anchors.rightMargin: Style.space(8)
+            anchors.leftMargin: Style.space(10)
+            anchors.right: groupCheckmark.left
+            anchors.rightMargin: Style.space(10)
             anchors.verticalCenter: parent.verticalCenter
+            textFormat: Text.PlainText
             text: groupRow.modelData.sectionLabel
-            color: groupRow.checked ? root.foreground : root.dimForeground
-            font.family: Style.font.family
-            font.pixelSize: (Style.font.body * root.fontScale)
+            color: groupRow.highlighted ? root.selectedText
+              : (groupRow.checked ? root.foreground : root.faintForeground)
+            font.family: root.uiFamily
+            font.pixelSize: root.titlePx
             elide: Text.ElideRight
+          }
+
+          Text {
+            id: groupCheckmark
+            anchors.right: parent.right
+            anchors.rightMargin: root.rowInset
+            anchors.verticalCenter: parent.verticalCenter
+            width: root.iconBox
+            textFormat: Text.PlainText
+            text: groupRow.checked ? "" : ""
+            color: groupRow.checked ? root.selectedText : root.faintForeground
+            font.family: Style.font.family
+            font.pixelSize: root.iconPx
+            horizontalAlignment: Text.AlignHCenter
           }
 
           MouseArea {

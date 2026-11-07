@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import Quickshell
 import Quickshell.Wayland
 import qs.Commons
@@ -7,8 +8,9 @@ import qs.Commons as Commons
 
 // LOCAL COPY of Omarchy's KeyboardPanel (Ui/KeyboardPanel.qml) for the Everything
 // plugin: identical behaviour, except the card is centered on the screen (not hung
-// from the bar icon) and the screen behind it is dimmed. Re-diff against the shell's
-// copy after Omarchy updates.
+// from the bar icon), the screen behind it is softened with the launcher scrim, the
+// card wears the [menu] palette with a drop shadow, and its height eases as results
+// change. Re-diff against the shell's copy after Omarchy updates.
 //
 // Original description: layer-shell popup attached to a bar widget icon, designed for
 // click-driven AND keyboard-driven panels (e.g. SUPER+CTRL+W summon).
@@ -51,11 +53,16 @@ PanelWindow {
   property int padding: Style.spacing.popupPadding
   property int contentWidth: Style.space(280)
   property int contentHeight: Style.space(200)
-  property var borderSpec: Border.surfaceSpec("popups", "border", Commons.Color.popups.border, Math.max(1, Style.space(2)))
+  // Same surface as Omarchy's own launcher, so Everything matches it on every theme.
+  property var borderSpec: Border.surfaceSpec("menu", "border", Commons.Color.menu.border, Math.max(1, Style.space(2)))
+  property color cardColor: Commons.Color.menu.background
+  // The theme's launcher scrim, plus a light shade so the card still separates
+  // on themes whose scrim is nearly transparent.
+  property color scrimColor: Commons.Color.menu.scrim
+  property real shadeOpacity: 0.12
   property bool centerOnBar: false
   // Card top as a fraction of screen height; 0.2 centers a 60%-tall card.
   property real topFraction: 0.2
-  property real dimOpacity: 0.32
   property bool open: false
   property int gap: Style.gapsOut  // distance between bar edge and panel
   property bool popoutSwitching: false
@@ -288,7 +295,13 @@ PanelWindow {
   // were meant for the apps behind it.
   Rectangle {
     anchors.fill: parent
-    color: Qt.rgba(0, 0, 0, root.dimOpacity)
+    color: root.scrimColor
+    opacity: card.opacity
+  }
+
+  Rectangle {
+    anchors.fill: parent
+    color: Qt.rgba(0, 0, 0, root.shadeOpacity)
     opacity: card.opacity
   }
 
@@ -391,13 +404,25 @@ PanelWindow {
 
   // --- card ----------------------------------------------------------------
 
+  RectangularShadow {
+    anchors.fill: card
+    radius: card.radius
+    offset: Qt.vector2d(0, Style.space(12))
+    blur: Style.space(48)
+    spread: 0
+    color: Qt.rgba(0, 0, 0, 0.30)
+    opacity: card.opacity
+    cached: true
+  }
+
   BorderSurface {
     id: card
+    objectName: "everything-card"
     x: root.cardOrigin.x
     y: root.cardOrigin.y
     width: root.contentWidth
     height: root.contentHeight
-    color: Commons.Color.popups.background
+    color: root.cardColor
     borderSpec: root.borderSpec
     padding: root.padding
     radius: Style.cornerRadius
@@ -405,7 +430,18 @@ PanelWindow {
 
     Behavior on opacity {
       enabled: !root.popoutSwitching && !root.popoutSwitchClosing
-      NumberAnimation { duration: root.open ? 45 : 25; easing.type: Easing.OutCubic }
+      NumberAnimation { duration: Style.duration(root.open ? 45 : 25); easing.type: Easing.OutCubic }
+    }
+
+    // Results arrive and filter while the card is up; ease the height so the
+    // bottom edge glides instead of jumping. Opening snaps to size.
+    Behavior on height {
+      enabled: root.open && card.opacity >= 1
+      NumberAnimation {
+        duration: Style.duration(110)
+        easing.type: Easing.Bezier
+        easing.bezierCurve: Style.easeOut
+      }
     }
 
     // Swallow clicks on the card so they don't bubble to the dismissal
@@ -426,7 +462,7 @@ PanelWindow {
 
       Behavior on opacity {
         enabled: root.popoutSwitching
-        NumberAnimation { duration: root.open ? 45 : 25; easing.type: Easing.OutCubic }
+        NumberAnimation { duration: Style.duration(root.open ? 45 : 25); easing.type: Easing.OutCubic }
       }
     }
   }

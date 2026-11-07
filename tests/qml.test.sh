@@ -14,7 +14,8 @@ chmod 0700 "$RUNTIME_TMP/runtime"
 
 if [[ -x $QMLLINT_BIN ]]; then
   cp -- "$ROOT_DIR/Service.qml" "$ROOT_DIR/Everything.qml" \
-    "$ROOT_DIR/EverythingModel.js" "$RUNTIME_TMP/lint/"
+    "$ROOT_DIR/CenteredPanel.qml" "$ROOT_DIR/EverythingModel.js" \
+    "$ROOT_DIR/InstantAnswers.js" "$RUNTIME_TMP/lint/"
   ln -s -- "$OMARCHY_SOURCE/shell/Commons" "$RUNTIME_TMP/lint/qs/Commons"
   ln -s -- "$OMARCHY_SOURCE/shell/Ui" "$RUNTIME_TMP/lint/qs/Ui"
   if ! "$QMLLINT_BIN" --signal-handler-parameters disable -I "$RUNTIME_TMP/lint" \
@@ -36,7 +37,8 @@ cp -- "$ROOT_DIR/tests/fixtures/qml-entrypoints/KeyboardPanel.qml" \
 PLUGIN_TMP="$RUNTIME_TMP/plugin space # % café"
 mkdir -p -- "$PLUGIN_TMP/rust/target/release"
 cp -- "$ROOT_DIR/Service.qml" "$ROOT_DIR/Everything.qml" \
-  "$ROOT_DIR/EverythingModel.js" "$PLUGIN_TMP/"
+  "$ROOT_DIR/EverythingModel.js" "$ROOT_DIR/InstantAnswers.js" "$PLUGIN_TMP/"
+cp -- "$ROOT_DIR/tests/fixtures/qml-entrypoints/CenteredPanel.qml" "$PLUGIN_TMP/"
 install -m 755 -- "$ROOT_DIR/tests/fixtures/qml-entrypoints/everything_helper.py" \
   "$PLUGIN_TMP/rust/target/release/everything-helper"
 

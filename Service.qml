@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import "EverythingModel.js" as Model
+import "InstantAnswers.js" as Answers
 
 // Shell-wide state and helper lifecycle. Bar instances acquire a lease only
 // while their results mode is open. The helper process therefore exists only
@@ -84,7 +85,15 @@ Item {
 
   function activate(item) {
     if (!item || !item.id) return
-    if (item.local) { activateLocal(item); return }
+    if (item.local) {
+      activateLocal(item)
+      // A timer was started or cleared: the cached list is now wrong.
+      if (item.kind === "timer") {
+        remindersFetchedAt = 0
+        reminderRefreshTimer.restart()
+      }
+      return
+    }
     var token = String(activationTokens[String(item.id)] || item.activationToken || "")
     if (!token) return
     pendingActivations += 1
@@ -252,6 +261,22 @@ Item {
       }
     } else if (action.type === "exec" && Array.isArray(action.argv)) {
       Quickshell.execDetached(action.argv)
+    } else if (action.type === "copy") {
+      // Instant answers: argv only, never a shell, so the value is inert.
+      copyText(action.text, action.label || action.text)
+    } else if (action.type === "paste-clip") {
+      var index = Number(action.index)
+      if (!isFinite(index) || index < 0 || Math.floor(index) !== index) return
+      Quickshell.execDetached([(omarchyPath || "/usr/share/omarchy") + "/bin/omarchy-clipboard-paste-text",
+        "--shift-insert", "--history-index", String(index)])
+    } else if (action.type === "paste-image") {
+      var imagePath = String(action.path || "")
+      var mime = String(action.mime || "")
+      if (imagePath.indexOf(homeDir + "/.local/state/omarchy/clipboard-images/") !== 0
+          || imagePath.indexOf("..") >= 0 || !/^image\/(png|jpeg|gif|webp)$/.test(mime)) return
+      Quickshell.execDetached(["sh", "-c",
+        'wl-copy --type "$1" < "$2" && sleep 0.15 && wtype -M shift -k Insert -m shift',
+        "sh", mime, imagePath])
     }
   }
 
@@ -414,6 +439,268 @@ Item {
     onTriggered: {
       root.ensureHelper()
       if (root.leaseCount > 0) root.requestScan()
+    }
+  }
+
+  // --- instant-answer data ------------------------------------------------
+  //
+  // InstantAnswers.js is pure; everything it needs from the outside world is
+  // fetched here, lazily, only when a query asks for it (`needs`). Bumping
+  // answerRevision makes open panels re-rank.
+
+  property int answerRevision: 0
+  readonly property string homeDir: Quickshell.env("HOME")
+
+  function bumpAnswers() { answerRevision += 1 }
+
+  function ensureAnswerData(needs) {
+    if (!needs) return
+    if (needs.rates) ensureRates()
+    if (needs.tz) ensureZones()
+    if (needs.clipboard) ensureClipboard()
+    if (needs.reminders) refreshReminders()
+  }
+
+  // Currency: ECB reference rates from a fixed HTTPS endpoint, at most twice
+  // a day, cached in ~/.cache. The request carries no user data.
+  property var rates: null
+  property string ratesError: ""
+  property bool ratesLoading: false
+  property real ratesAttemptAt: 0
+  readonly property string ratesUrl: "https://api.frankfurter.dev/v1/latest?base=EUR"
+  readonly property real ratesMaxAgeMs: 12 * 3600 * 1000
+
+  function ensureRates() {
+    var now = Date.now()
+    if (rates && now - Number(rates.fetchedAt || 0) < ratesMaxAgeMs) return
+    if (ratesLoading || now - ratesAttemptAt < 60000) return
+    ratesLoading = true
+    ratesAttemptAt = now
+    var xhr = new XMLHttpRequest()
+    ratesTimeout.xhr = xhr
+    ratesTimeout.restart()
+    xhr.onreadystatechange = function() {
+      if (xhr.readyState !== XMLHttpRequest.DONE) return
+      ratesTimeout.stop()
+      root.ratesLoading = false
+      var text = String(xhr.responseText || "")
+      var parsed = null
+      if (xhr.status === 200 && text.length < 20000) {
+        try { parsed = Answers.validateRates(JSON.parse(text)) } catch (_error) { parsed = null }
+      }
+      if (parsed) {
+        parsed.fetchedAt = Date.now()
+        root.rates = parsed
+        root.ratesError = ""
+        ratesCache.setText(JSON.stringify(parsed) + "\n")
+      } else if (!root.rates) {
+        root.ratesError = xhr.status ? "HTTP " + xhr.status : "offline"
+      }
+      root.bumpAnswers()
+    }
+    xhr.open("GET", ratesUrl)
+    xhr.send()
+  }
+
+  Timer {
+    id: ratesTimeout
+    property var xhr: null
+    interval: 8000
+    onTriggered: if (xhr) xhr.abort()
+  }
+
+  FileView {
+    id: ratesCache
+    path: root.homeDir + "/.cache/omarchy-everything-rates.json"
+    printErrors: false
+    onLoaded: {
+      try {
+        var cached = Answers.validateRates(JSON.parse(text()))
+        if (cached && !root.rates) { root.rates = cached; root.bumpAnswers() }
+      } catch (_error) { }
+    }
+  }
+
+  // Time zones: today's UTC offset for each known zone, from tzdata via
+  // `date`. The zone names are the plugin's own constants, passed as argv.
+  property var tzOffsets: null
+  property string localZone: "UTC"
+  property real tzFetchedAt: 0
+
+  function ensureZones() {
+    if (tzProcess.running) return
+    if (tzOffsets && Date.now() - tzFetchedAt < 30 * 60 * 1000) return
+    tzProcess.command = ["sh", "-c",
+      'for z do printf "%s %s\\n" "$z" "$(TZ="$z" date +%z)"; done; '
+      + 'printf "LOCAL %s\\n" "$(timedatectl show -p Timezone --value 2>/dev/null)"',
+      "sh"].concat(Answers.zoneList())
+    tzProcess.running = true
+  }
+
+  Process {
+    id: tzProcess
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        var parsed = Answers.parseZoneOffsets(text)
+        root.tzOffsets = parsed.offsets
+        root.localZone = parsed.localZone
+        root.tzFetchedAt = Date.now()
+        root.bumpAnswers()
+      }
+    }
+  }
+
+  // Clipboard history: Omarchy's own store, read only while asked for.
+  property var clipboardHistory: null
+  property bool clipboardWanted: false
+
+  function ensureClipboard() {
+    if (clipboardWanted) return
+    clipboardWanted = true
+  }
+
+  FileView {
+    id: clipboardFile
+    path: root.clipboardWanted ? root.homeDir + "/.local/state/omarchy/clipboard-history.json" : ""
+    watchChanges: true
+    printErrors: false
+    onFileChanged: reload()
+    onLoaded: {
+      root.clipboardHistory = Answers.parseClipboardHistory(text())
+      root.bumpAnswers()
+    }
+    onLoadFailed: {
+      root.clipboardHistory = []
+      root.bumpAnswers()
+    }
+  }
+
+  // Reminders: `omarchy reminder show --json`, refreshed per timer query.
+  property var reminders: []
+  property real remindersFetchedAt: 0
+
+  function refreshReminders() {
+    if (reminderProcess.running || Date.now() - remindersFetchedAt < 2000) return
+    reminderProcess.running = true
+  }
+
+  Timer {
+    id: reminderRefreshTimer
+    interval: 700
+    onTriggered: root.refreshReminders()
+  }
+
+  Process {
+    id: reminderProcess
+    command: ["omarchy", "reminder", "show", "--json"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        root.reminders = Answers.parseReminders(text)
+        root.remindersFetchedAt = Date.now()
+        root.bumpAnswers()
+      }
+    }
+  }
+
+  // Ask: one `opencode run` against the warm background service, in the
+  // configured workspace. The prompt is a single argv entry, never shell text.
+  property var askState: Answers.emptyAskState()
+  property var lastAsk: null
+
+  function expandHome(path) {
+    var value = String(path || "~")
+    if (value === "~") return homeDir
+    if (value.indexOf("~/") === 0) return homeDir + value.slice(1)
+    return value
+  }
+
+  function ask(prompt, workspace, model) {
+    var text = String(prompt || "").trim()
+    if (!text) return
+    if (askProcess.running) askProcess.running = false
+    var dir = expandHome(workspace)
+    var next = Answers.emptyAskState()
+    next.status = "running"
+    next.prompt = text
+    next.workspace = dir
+    next.startedAt = Date.now()
+    askState = next
+    var argv = ["opencode", "run", "--format", "json", "--title", "Everything: " + text.slice(0, 60)]
+    if (model && /^[A-Za-z0-9._\/:#-]+$/.test(String(model))) argv.push("--model", String(model))
+    // Not "--": opencode 2.2's parser then sends the message twice. A prompt
+    // that starts with "-" gets a leading space so it can never be a flag.
+    argv.push(/^-/.test(text) ? " " + text : text)
+    askProcess.workingDirectory = dir
+    // `opencode run` reads stdin whenever it is not a TTY, and Process hands
+    // it an open pipe, so it would wait for EOF forever. Run it with stdin
+    // from /dev/null; the argv still passes through untouched as "$@".
+    askProcess.command = ["sh", "-c", 'exec "$@" < /dev/null', "sh"].concat(argv)
+    askProcess.running = true
+    askTimeout.restart()
+    bumpAnswers()
+  }
+
+  function cancelAsk() {
+    if (!askProcess.running) return
+    askTimeout.stop()
+    askProcess.running = false
+    askState = Answers.updatedAskState(askState, { status: "cancelled", finishedAt: Date.now() })
+    bumpAnswers()
+  }
+
+  function openAskInOpencode() {
+    if (!askState.sessionId) return
+    Quickshell.execDetached(["xdg-terminal-exec", "opencode", "--session",
+      askState.sessionId, askState.workspace || homeDir])
+  }
+
+  function copyText(text, label) {
+    var value = String(text || "")
+    if (!value) return
+    Quickshell.execDetached(["wl-copy", "--", value])
+    Quickshell.execDetached(["notify-send", "-a", "Everything", "-t", "1800",
+      "Copied " + String(label || "").slice(0, 80)])
+  }
+
+  Process {
+    id: askProcess
+    stdout: SplitParser {
+      onRead: function(line) { root.askState = Answers.applyAskEvent(root.askState, line) }
+    }
+    stderr: StdioCollector { id: askStderr; waitForEnd: true }
+    onExited: function(exitCode, exitStatus) {
+      askTimeout.stop()
+      if (root.askState.status !== "running") return
+      var current = root.askState
+      var failed = exitCode !== 0 && !current.answer
+      var next = Answers.updatedAskState(current, {
+        finishedAt: Date.now(),
+        status: failed ? "error" : "done",
+        error: failed ? (current.error || String(askStderr.text || "").trim().split("\n").pop().slice(0, 300)
+          || ("opencode exited with " + exitCode)) : current.error
+      })
+      root.askState = next
+      root.lastAsk = { prompt: next.prompt }
+      root.bumpAnswers()
+      // Nobody is looking: deliver the answer as a notification instead.
+      if (root.leaseCount === 0 && next.status === "done") {
+        Quickshell.execDetached(["notify-send", "-a", "opencode", "-t", "12000",
+          next.prompt.slice(0, 80), next.answer.slice(0, 400)])
+      }
+    }
+  }
+
+  Timer {
+    id: askTimeout
+    interval: 300000
+    onTriggered: {
+      if (!askProcess.running) return
+      askProcess.running = false
+      root.askState = Answers.updatedAskState(root.askState,
+        { status: "error", error: "Timed out after 5 minutes", finishedAt: Date.now() })
+      root.bumpAnswers()
     }
   }
 

@@ -9,6 +9,11 @@ const source = fs.readFileSync(path.join(root, "EverythingModel.js"), "utf8")
 const sandbox = {}
 vm.createContext(sandbox)
 vm.runInContext(source, sandbox, { filename: "EverythingModel.js" })
+// InstantAnswers.js imports the model as `Model`; share one sandbox.
+sandbox.Model = sandbox
+vm.runInContext(fs.readFileSync(path.join(root, "InstantAnswers.js"), "utf8")
+  .replace(/^\.pragma library\s*/m, "").replace(/^\.import .*$/m, ""),
+  sandbox, { filename: "InstantAnswers.js" })
 
 const item = (id, title, context, extra = {}) => ({
   id,
@@ -27,12 +32,12 @@ const item = (id, title, context, extra = {}) => ({
 {
   const catalog = sandbox.supportedGroupCatalog()
   const expectedKinds = [
-    "window", "browser-tab", "app-tab", "terminal-tab", "terminal-pane",
+    "calc", "convert", "time", "timer", "ask", "clipboard", "window", "browser-tab", "app-tab", "terminal-tab", "terminal-pane",
     "herdr-agent", "herdr-workspace", "herdr-tab", "herdr-pane", "herdr-session",
     "tmux-session", "tmux-window", "tmux-pane", "neovim-buffer", "app", "omarchy-menu",
   ]
   const expectedSections = [
-    "Windows", "Browser tabs", "Application tabs", "Terminal tabs", "Terminal panes",
+    "Calculator", "Conversions", "Time zones", "Timers", "Ask opencode", "Clipboard history", "Windows", "Browser tabs", "Application tabs", "Terminal tabs", "Terminal panes",
     "Herdr agents", "Herdr workspaces", "Herdr tabs", "Herdr panes", "Herdr sessions",
     "tmux sessions", "tmux windows", "tmux panes", "Buffers", "Apps", "Omarchy menu",
   ]
@@ -531,15 +536,17 @@ assert.doesNotMatch(qml, /rowMouse\.containsMouse/,
   "row styling never treats a stationary pointer as movement")
 assert.doesNotMatch(qml, /id:\s*heading\b/,
   "the panel does not render a redundant title row")
-assert.match(qml, /readonly property real rowHeight:\s*Style\.font\.body \* 1\.5/,
-  "result row height scales to one and a half times the thing-name font")
+assert.match(qml, /readonly property int titlePx:\s*Math\.round\(Style\.font\.body \* fontScale\)/,
+  "thing names run at the launcher font scale")
+assert.match(qml, /readonly property real rowHeight:\s*Math\.round\(titlePx \* 2\.1\)/,
+  "result row height derives from the thing-name font")
 assert.match(qml, /section\.property:\s*"kind"[\s\S]*section\.delegate:[\s\S]*Accessible\.Heading/,
   "the list renders accessible kind headings")
 const scrollBarHandler = qml.slice(qml.indexOf("ScrollBar.vertical"),
   qml.indexOf("delegate: Item", qml.indexOf("ScrollBar.vertical")))
 assert.match(scrollBarHandler, /leftPadding:\s*Style\.space\(4\)[\s\S]*rightPadding:\s*0/,
   "the native scrollbar nub is shifted toward the panel edge")
-assert.match(scrollBarHandler, /palette\.mid:\s*Color\.accent[\s\S]*palette\.dark:\s*Color\.accent/,
+assert.match(scrollBarHandler, /palette\.mid:\s*Commons\.Color\.accent[\s\S]*palette\.dark:\s*Commons\.Color\.accent/,
   "the native scrollbar nub uses the theme accent")
 assert.doesNotMatch(scrollBarHandler, /contentItem:|background:/,
   "scrollbar placement and color do not replace the native control")
@@ -574,7 +581,7 @@ const applicationIconHandler = qml.slice(qml.indexOf("id: applicationIcon"),
 assert.match(applicationIconHandler, /visible:\s*row\.windowAppGlyph\.length === 0/,
   "a known glyph takes precedence over the application image")
 assert.match(applicationIconHandler,
-  /MultiEffect[\s\S]*colorization:\s*1\.0[\s\S]*colorizationColor:\s*row\.highlighted\s*\?\s*root\.foreground\s*:\s*root\.dimForeground/,
+  /MultiEffect[\s\S]*colorization:\s*1\.0[\s\S]*colorizationColor:\s*row\.iconColor/,
   "application images use the same selected and unselected colors as glyphs")
 assert.doesNotMatch(applicationIconHandler, /modelData\.active/,
   "the provider's current marker does not brighten a colored application image")
@@ -582,8 +589,11 @@ assert.match(qml, /id:\s*fallbackThingIcon[\s\S]*Model\.kindIcon\(row\.modelData
   "rows retain a deterministic glyph fallback")
 const fallbackIconHandler = qml.slice(qml.indexOf("id: fallbackThingIcon"),
   qml.indexOf("id: metadataLabel", qml.indexOf("id: fallbackThingIcon")))
-assert.match(fallbackIconHandler, /color:\s*row\.highlighted\s*\?\s*root\.foreground\s*:\s*root\.dimForeground/,
-  "only the actual highlight brightens a glyph icon")
+assert.match(fallbackIconHandler, /color:\s*row\.iconColor/,
+  "glyph icons share the row icon color")
+assert.match(resultDelegateHandler,
+  /readonly property color iconColor:\s*highlighted \? root\.selectedText : root\.dimForeground/,
+  "only the actual highlight brightens a row icon")
 assert.doesNotMatch(fallbackIconHandler, /modelData\.active/,
   "the provider's current marker does not imitate keyboard highlight")
 assert.match(qml, /id:\s*metadataLabel[\s\S]*text:\s*row\.metadata/,
@@ -595,10 +605,14 @@ assert.match(qml, /metadataForItem\([\s\S]*modelData, root\.itemRelations\)/,
 assert.doesNotMatch(qml, /id:\s*badgeRow|id:\s*badgeLabel|radius:\s*height \/ 2/,
   "result rows do not render metadata pills")
 const titleHandler = qml.slice(qml.indexOf("id: titleLabel"), qml.indexOf("MouseArea", qml.indexOf("id: titleLabel")))
-assert.doesNotMatch(titleHandler, /font\.(?:bold|weight)/,
+assert.doesNotMatch(titleHandler, /font\.bold/,
   "thing names remain regular weight in every state")
-assert.match(titleHandler, /lineHeightMode:\s*Text\.FixedHeight[\s\S]*lineHeight:\s*root\.rowHeight/,
-  "thing-name text uses the same one-and-a-half-times line height")
+assert.match(titleHandler, /font\.weight:\s*row\.emphasis \? Font\.Medium : Font\.Normal/,
+  "only an instant answer is set heavier than a thing name")
+assert.match(titleHandler, /textFormat:\s*Text\.StyledText[\s\S]*Model\.highlightMarkup\(/,
+  "thing names reach the StyledText sink only through the escaping highlighter")
+assert.match(titleHandler, /maximumLineCount:\s*1[\s\S]*elide:\s*Text\.ElideRight/,
+  "thing names stay on one elided line")
 assert.doesNotMatch(resultDelegateHandler, /border\.(?:width|color)/,
   "the highlighted thing uses fill without an outline")
 assert.doesNotMatch(qml, /refreshButton|Refresh all providers|everythingService\.refresh\(\)/,
@@ -607,8 +621,34 @@ assert.doesNotMatch(qml, /statusText|statusMessage|Starting Everything|Some prov
   "the panel renders no discovery or warning messages")
 assert.match(qml, /id:\s*emptyState[\s\S]*No matches for/,
   "an empty search says so instead of showing a blank panel")
-assert.match(qml, /id:\s*footer[\s\S]*open[\s\S]*esc close/,
+assert.match(qml, /readonly property var footerHints:[\s\S]*label: "open"[\s\S]*key: "esc"/,
   "a one-line key hint footer sits under the results")
+assert.match(qml, /id:\s*footer[\s\S]*model:\s*root\.footerHints/,
+  "the footer renders the contextual key hints")
+assert.match(qml, /readonly property color foreground:\s*Commons\.Color\.menu\.text/,
+  "the card uses the same palette as Omarchy's launcher")
+assert.doesNotMatch(qml.replace(/\/\/.*$/gm, ""), /Qt\.darker\(/,
+  "secondary text dims with alpha, which also works on light themes")
+{
+  // Every Text in the panel either declares PlainText or is the one
+  // StyledText title fed by Model.highlightMarkup (plugin UI safety).
+  const textBlocks = qml.split(/\n\s*Text \{/).slice(1)
+  textBlocks.forEach((block, index) => {
+    // Look only at this block's own properties, up to its first child or close.
+    const body = block.split(/\n\s*\}/)[0]
+    if (/Text\.MarkdownText/.test(body)) {
+      assert.match(body, /Answers\.safeMarkdown\(/,
+        `Text block ${index + 1} renders Markdown only through safeMarkdown`)
+      return
+    }
+    assert.match(body, /textFormat:\s*Text\.(?:PlainText|StyledText)/,
+      `Text block ${index + 1} declares an explicit text format`)
+  })
+}
+assert.match(searchHandler, /event\.key === Qt\.Key_Down[\s\S]*root\.moveSelection\(1, true\)/,
+  "Down in the search line moves the highlight without leaving the search line")
+assert.match(qml, /var retarget = searchField\.text !== lastRankedQuery/,
+  "only a changed query re-targets the best match; refreshes keep the selection")
 assert.match(qml, /CenteredPanel\s*\{/, "the panel is centered on screen, not hung from the bar icon")
 assert.doesNotMatch(qml, /function\s+(?:open|close|togglePanel)\s*\(/,
   "panel uses the inherited shell lifecycle")
@@ -626,6 +666,184 @@ assert.doesNotMatch(serviceQml, /statusMessage|activeScanQuiet/,
   "the service carries no dead panel-message state")
 assert.doesNotMatch(serviceQml, /function refresh\s*\(/,
   "the service has no unused manual refresh entry point")
+
+{
+  const hl = sandbox.highlightMarkup
+  assert.equal(hl("Google Calendar", "cal", "#205ea6"),
+    'Google <font color="#205ea6"><b>Cal</b></font>endar',
+    "a substring match is emphasised in place")
+  assert.equal(hl("Firefox", "ffx", "#205ea6"),
+    '<font color="#205ea6"><b>F</b></font>ire<font color="#205ea6"><b>f</b></font>o<font color="#205ea6"><b>x</b></font>',
+    "a fuzzy match emphasises the characters the ranker matched")
+  assert.equal(hl("devbox: acme-api", "acme api", "#205ea6"),
+    'devbox: <font color="#205ea6"><b>acme</b></font>-<font color="#205ea6"><b>api</b></font>',
+    "each search term is emphasised separately")
+  assert.equal(hl("Café menu", "cafe", "#205ea6"),
+    '<font color="#205ea6"><b>Café</b></font> menu',
+    "accent folding still points at the original characters")
+  assert.equal(hl('<img src="https://example.invalid/t"> & co', "zzz", "#205ea6"),
+    '&lt;img src=&quot;https://example.invalid/t&quot;&gt; &amp; co',
+    "markup-shaped titles are escaped even without a match")
+  assert.equal(hl("<b>x</b>", "x", "#205ea6"),
+    '&lt;b&gt;<font color="#205ea6"><b>x</b></font>&lt;/b&gt;',
+    "only the highlighter's own tags survive")
+  assert.equal(hl("acme-api", "acme", 'red"><img src=x>'),
+    "<b>acme</b>-api",
+    "a malformed color never reaches the markup")
+  assert.equal(hl("Line\nbreak", "", "#205ea6"), "Line break",
+    "control whitespace collapses to one line")
+  assert.equal(hl("Telegram 😀 bot", "bot", "#123456"),
+    'Telegram 😀 <font color="#123456"><b>bot</b></font>',
+    "surrogate pairs pass through unsplit")
+  assert.deepEqual(Array.from(sandbox.matchPositions("Windows", "tabs")), [],
+    "a row found through its group name has no title emphasis")
+}
+
+{
+  const calc = query => {
+    const result = sandbox.evaluateCalculation(query)
+    return result ? result.display : null
+  }
+  assert.equal(calc("2+2"), "4", "plain arithmetic")
+  assert.equal(calc("(1 + 2) * 3"), "9", "parentheses bind first")
+  assert.equal(calc("2^3^2"), "512", "powers are right-associative")
+  assert.equal(calc("-2^2"), "-4", "unary minus binds looser than power")
+  assert.equal(calc("2^10"), "1,024", "results group thousands for display")
+  assert.equal(sandbox.evaluateCalculation("2^10").copy, "1024", "the clipboard value is ungrouped")
+  assert.equal(calc("0.1 + 0.2"), "0.3", "binary float noise is rounded away")
+  assert.equal(calc("15% of 80"), "12", "x% of y")
+  assert.equal(calc("80 + 15%"), "92", "adding a percent adds that share of the left side")
+  assert.equal(calc("80 - 25%"), "60", "subtracting a percent")
+  assert.equal(calc("sqrt(16) + abs(-2)"), "6", "functions")
+  assert.equal(calc("ln(e)"), "1", "a function call alone is a calculation")
+  assert.equal(calc("2pi"), "6.28318530718", "implicit multiplication with constants")
+  assert.equal(calc("3 x 4"), "12", "x multiplies")
+  assert.equal(calc("7×6"), "42", "the times sign multiplies")
+  assert.equal(calc("10!"), "3,628,800", "factorial")
+  assert.equal(calc("0xff + 1"), "256", "hex literals")
+  assert.equal(calc("10 mod 3"), "1", "mod")
+  assert.equal(calc("=pi"), "3.14159265359", "= forces evaluation of a lone constant")
+  for (const query of ["2026", "1.5", "pi", "tab 3", "e2e", "ja2-pecel", "workspace 2",
+    "covid 19", "100 usd", "1 +", "100/0", "", "constructor(1)", "__proto__(1)",
+    "alert(1)", "2+2; rm -rf ~"]) {
+    assert.equal(calc(query), null, `${JSON.stringify(query)} is not a calculation`)
+  }
+  assert.equal(calc("1+".repeat(150) + "1"), null, "overlong input is ignored")
+  const answer = sandbox.instantAnswers("6*7", {}).items[0]
+  assert.equal(answer.kind, "calc")
+  assert.equal(answer.title, "42")
+  assert.equal(answer.local.type, "copy")
+  assert.equal(answer.local.text, "42")
+  assert.equal(sandbox.metadataForItem(answer, {}), "copy", "the answer row explains its action")
+  assert.equal(sandbox.instantAnswers("firefox", {}).items.length, 0, "searches get no answer row")
+}
+
+{
+  const A = sandbox
+  const rates = A.validateRates({ base: "EUR", date: "2026-11-06",
+    rates: { USD: 1.1165, SGD: 1.4309, IDR: 20208.93, JPY: 176.77, GBP: 0.83415, MYR: 4.5319 } })
+  const tz = { "Asia/Singapore": 480, "Asia/Jakarta": 420, "Europe/London": 0, "Asia/Tokyo": 540,
+    "America/New_York": -300, UTC: 0 }
+  // Fixed instant: 2026-11-07 00:00 UTC (08:00 in Singapore, a Saturday).
+  const now = Date.UTC(2026, 10, 7, 0, 0)
+  const home = "/home/test"
+  const ctx = { rates, currencies: ["SGD", "IDR", "USD"], tzOffsets: tz, localZone: "Asia/Singapore", now,
+    home, reminders: [], askLabel: "acme-api",
+    clipboard: [{ type: "text", text: "16200" }, { type: "text", text: "hello world\nsecond" },
+      { type: "image", path: home + "/.local/state/omarchy/clipboard-images/abc", mime: "image/png", capturedAt: "Wed 22:13" },
+      { type: "image", path: home + "/.local/state/omarchy/clipboard-images/../../../.ssh/id", mime: "image/png" },
+      { type: "image", path: "/etc/passwd", mime: "image/png" }] }
+  const titles = query => Array.from(A.instantAnswers(query, ctx).items, item => item.title)
+
+  // currency
+  assert.deepEqual(titles("100 usd"), ["S$128.16", "Rp 1,810,025"], "a bare amount converts to the favourite currencies")
+  assert.deepEqual(titles("1.5jt idr to sgd"), ["S$106.21"], "juta and explicit targets")
+  assert.deepEqual(titles("rp 50rb in usd"), ["$2.76"], "symbol-first amounts and ribu")
+  assert.deepEqual(titles("12*4.5 usd in sgd"), ["S$69.21"], "an expression can be the amount")
+  assert.equal(A.instantAnswers("100 usd", ctx).items[0].local.text, "128.16", "money copies as a plain number")
+  assert.deepEqual(titles("5 pounds"), ["2.26796 kg"], "pounds is weight, not sterling")
+  const noRates = A.instantAnswers("100 usd", Object.assign({}, ctx, { rates: null }))
+  assert.equal(noRates.needs.rates, true, "a currency query asks the service for rates")
+  assert.match(noRates.items[0].title, /Fetching exchange rates/)
+
+  // units
+  assert.deepEqual(titles("5 km in mi"), ["3.10686 mi"])
+  assert.deepEqual(titles("100 f to c"), ["37.7778 °C"], "temperature is affine, not a factor")
+  assert.deepEqual(titles("2 tb"), ["1.81899 TiB", "2,000 GB"], "default targets per unit")
+  assert.deepEqual(titles("5 m"), [], "a bare single-letter unit is too ambiguous")
+  assert.deepEqual(titles("5 km in kg"), [], "units of different kinds never convert")
+
+  // time zones
+  assert.deepEqual(titles("3pm jakarta"), ["16:00 in Singapore"], "a time in a city is shown in local time")
+  assert.deepEqual(titles("15:00 london to tokyo"), ["00:00 in Tokyo (+1d)"], "city to city with day shift")
+  assert.deepEqual(titles("3pm in new york"), ["02:00 in New York"], "local time to a city")
+  assert.deepEqual(titles("time in tokyo"), ["09:00 in Tokyo"], "current time in a city")
+  assert.deepEqual(titles("london time"), ["00:00 in London"])
+  assert.deepEqual(titles("3 tokyo"), [], "a bare number is not a time")
+  assert.equal(A.instantAnswers("time in tokyo", Object.assign({}, ctx, { tzOffsets: null })).needs.tz, true)
+
+  // timers
+  const timer = A.instantAnswers("timer 10m tea", ctx)
+  assert.equal(timer.exclusive, true)
+  assert.equal(timer.items[0].title, "Remind me in 10 min — tea")
+  assert.deepEqual(Array.from(timer.items[0].local.argv), ["omarchy", "reminder", "10", "tea"],
+    "the label is one argv entry, never shell text")
+  assert.deepEqual(Array.from(A.instantAnswers("remind me in 1h 30m to stretch; rm -rf ~", ctx).items[0].local.argv),
+    ["omarchy", "reminder", "90", "stretch; rm -rf ~"], "labels stay inert argv")
+  assert.equal(A.instantAnswers("timer app", ctx).items.length, 0, "a non-duration is a normal search")
+  assert.equal(A.instantAnswers("timers", ctx).needs.reminders, true)
+
+  // clipboard
+  const clip = A.instantAnswers("clip", ctx)
+  assert.equal(clip.exclusive, true)
+  assert.deepEqual(Array.from(clip.items, item => item.title), ["16200", "hello world second", "Image"],
+    "images outside Omarchy's image store are never offered")
+  assert.deepEqual(Array.from(A.instantAnswers("clip hello", ctx).items, item => item.local.index), [1],
+    "filtering keeps the original history index for the paste helper")
+  assert.equal(A.instantAnswers("clip", Object.assign({}, ctx, { clipboard: null })).needs.clipboard, true)
+
+  // ask
+  const asked = A.instantAnswers("? what did I spend on grab", ctx)
+  assert.equal(asked.exclusive, true)
+  assert.equal(asked.items[0].local.type, "ask")
+  assert.equal(asked.items[0].local.prompt, "what did I spend on grab")
+  assert.equal(A.instantAnswers("?", Object.assign({}, ctx, { lastAsk: { prompt: "hi" } })).items[0].local.type,
+    "query", "a bare ? reopens the last answer")
+  assert.equal(A.instantAnswers("? x", Object.assign({}, ctx, { disabledKinds: ["ask"] })).items.length, 0,
+    "a hidden group yields nothing")
+
+  // agent markdown is neutralised
+  assert.equal(A.safeMarkdown('see <img src="https://x/t"> ![a](https://x/p.png)'),
+    "see &lt;img src=\"https://x/t\"> [image: a]", "no image or raw HTML reaches the Markdown sink")
+  assert.equal(A.safeMarkdown("use `a < b` here"), "use `a < b` here", "code keeps literal characters")
+  assert.equal(A.safeMarkdown("```\n<b>\n```"), "```\n<b>\n```")
+
+  // service data parsers
+  assert.equal(A.validateRates({ base: "EUR", date: "x", rates: {} }), null)
+  assert.equal(A.validateRates({ base: "EUR", date: "2026-11-06", rates: { "US D": 1, A: 2, B: 3, C: 4, D: 5 } }), null,
+    "malformed codes reject the whole payload")
+  const zones = A.parseZoneOffsets("Asia/Jakarta +0700\nAmerica/New_York -0500\nLOCAL Asia/Jakarta\njunk line\n")
+  assert.equal(zones.offsets["America/New_York"], -300)
+  assert.equal(zones.localZone, "Asia/Jakarta")
+  assert.equal(A.parseZoneOffsets("LOCAL Mars/Base\n").localZone, "UTC", "an unknown local zone falls back to UTC")
+  assert.deepEqual(Array.from(A.parseReminders("not json")), [])
+  let state = A.emptyAskState()
+  state = A.applyAskEvent(state, JSON.stringify({ type: "tool_use", sessionID: "ses_abc123", part: { tool: "read" } }))
+  assert.equal(state.tool, "read")
+  assert.equal(state.sessionId, "ses_abc123")
+  state = A.applyAskEvent(state, JSON.stringify({ type: "text", part: { id: "p1", text: "pong" } }))
+  state = A.applyAskEvent(state, JSON.stringify({ type: "step_finish", part: { cost: 0.002 } }))
+  state = A.applyAskEvent(state, "garbage")
+  assert.equal(state.answer, "pong")
+  assert.equal(state.cost, 0.002)
+  const running = Object.assign(A.emptyAskState(), { status: "running" })
+  const done = A.updatedAskState(running, { status: "done" })
+  assert.notEqual(done, running, "a status change is a new object, so QML notifies")
+  assert.equal(running.status, "running", "the previous state is never mutated")
+  assert.equal(done.status, "done")
+  assert.equal(A.applyAskEvent(A.emptyAskState(), JSON.stringify({ sessionID: "ses_; rm -rf" })).sessionId, "",
+    "only well-formed session ids are kept")
+}
 
 console.log("model.test.js: all tests passed")
 
