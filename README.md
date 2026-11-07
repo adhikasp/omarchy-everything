@@ -29,6 +29,7 @@ Everything answers with one keystroke. It lists what is **already open**, and pi
 
 - **Fuzzy, fzf-style.** `hck` finds *Hacker News*, `auth` finds the agent refactoring your auth middleware. The letters that matched light up.
 - **<kbd>Enter</kbd> takes the highlighted hit.** The highlight is always visible, and <kbd>↑</kbd> <kbd>↓</kbd> move it while you keep typing.
+- **Contextual.** The list leads with what fits where you were: Herdr agents when a terminal had focus, Chrome tabs when Chrome did, windows otherwise.
 - **Looks like it belongs.** Same palette as the Omarchy menu, follows your theme, crisp on HiDPI.
 
 ## Type anything else, too

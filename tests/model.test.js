@@ -91,6 +91,23 @@ const item = (id, title, context, extra = {}) => ({
 
 {
   const rows = [
+    item("window", "Window", "", { kind: "window" }),
+    item("browser", "Browser", "", { kind: "browser-tab" }),
+    item("agent", "Agent", "", { kind: "herdr-agent" }),
+  ]
+  const ids = lead => Array.from(sandbox.rank(rows, "", {}, [], lead), row => row.id)
+  assert.equal(sandbox.contextLeadKind("google-chrome", rows), "browser-tab")
+  assert.equal(sandbox.contextLeadKind("com.mitchellh.ghostty", rows), "herdr-agent")
+  assert.equal(sandbox.contextLeadKind("com.mitchellh.ghostty", rows.slice(0, 2)), "",
+    "a terminal without Herdr agents falls back to the default order")
+  assert.equal(sandbox.contextLeadKind("org.gnome.Nautilus", rows), "")
+  assert.deepEqual(ids(""), ["window", "browser", "agent"], "no context keeps the default order")
+  assert.deepEqual(ids("herdr-agent"), ["agent", "window", "browser"], "terminal focus leads with agents")
+  assert.deepEqual(ids("browser-tab"), ["browser", "window", "agent"], "Chrome focus leads with tabs")
+}
+
+{
+  const rows = [
     item("context", "Unrelated", "Project Alpha", { active: true, recency: 4000 }),
     item("title", "Alpha notes", "Old", { recency: -4000 }),
   ]
@@ -513,7 +530,7 @@ assert.match(qml,
   /readonly property var supportedGroups:\s*Model\.supportedGroupCatalog\(\)[\s\S]*readonly property var disabledKinds:\s*Model\.normalizeDisabledKinds\([\s\S]*setting\("disabledKinds", \[\]\)/,
   "the checklist and injected settings use the pure canonical model")
 assert.match(qml,
-  /var nextItems = Model\.rank\([\s\S]*everythingService\.hiddenIds[\s\S]*disabledKinds\)/,
+  /var nextItems = Model\.rank\([\s\S]*everythingService\.hiddenIds[\s\S]*disabledKinds,\s*focusLeadKind\)/,
   "persistent group visibility participates in every ranked rebuild")
 assert.match(qml,
   /function persistDisabledKinds[\s\S]*persistSetting\("disabledKinds", nextKinds\)[\s\S]*root\.settings = entry[\s\S]*updateEntryInline\(root\.moduleName, entry\)/,

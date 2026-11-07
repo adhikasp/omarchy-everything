@@ -875,7 +875,22 @@ function rankedEntry(item, query, sourceIndex, relations) {
   }
 }
 
-function rank(items, query, hiddenIds, disabledKinds) {
+// The window that had focus when the panel opened decides which group leads
+// the list: a terminal puts Herdr agents first (when Herdr is running), Chrome
+// puts its tabs first, anything else keeps the default window-first order.
+function contextLeadKind(windowClass, items) {
+  var cls = normalized(windowClass)
+  if (!cls) return ""
+  if (/chrome|chromium/.test(cls)) return "browser-tab"
+  if (/ghostty|kitty|foot|alacritty|wezterm|xterm/.test(cls)) {
+    var source = Array.isArray(items) ? items : []
+    for (var i = 0; i < source.length; i++)
+      if (source[i] && source[i].kind === "herdr-agent") return "herdr-agent"
+  }
+  return ""
+}
+
+function rank(items, query, hiddenIds, disabledKinds, leadKind) {
   var source = Array.isArray(items) ? items : []
   var hidden = hiddenIds || {}
   var disabled = disabledKindSet(disabledKinds)
@@ -892,6 +907,11 @@ function rank(items, query, hiddenIds, disabledKinds) {
   }
   ranked.sort(function(a, b) {
     var groupOrder = kindOrder(a.item.kind) - kindOrder(b.item.kind)
+    if (leadKind && !normalizedQuery) {
+      var aLead = a.item.kind === leadKind ? 0 : 1
+      var bLead = b.item.kind === leadKind ? 0 : 1
+      if (aLead !== bLead) return aLead - bLead
+    }
     if (groupOrder !== 0) return groupOrder
     // With a query, substring hits (quality >= 5000) keep the stable
     // workspace/host ordering and always precede fuzzy subsequence hits; fuzzy

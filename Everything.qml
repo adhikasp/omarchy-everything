@@ -191,6 +191,7 @@ Panel {
       return
     }
     popupMode = wanted
+    captureFocusContext()
     root.open()
   }
 
@@ -599,12 +600,25 @@ Panel {
     onTriggered: root.askClock = Date.now()
   }
 
+  // Window class that had focus when the panel opened; leads the empty-query list.
+  property string focusLeadKind: ""
+
+  function captureFocusContext() {
+    var cls = ""
+    try {
+      var top = Hyprland.activeToplevel
+      cls = top && top.lastIpcObject ? String(top.lastIpcObject["class"] || "") : ""
+    } catch (e) { cls = "" }
+    focusLeadKind = Model.contextLeadKind(cls, everythingService ? everythingService.items : [])
+  }
+
   function rebuildRankedItems() {
     var nextItems = Model.rank(
       everythingService ? everythingService.items : [],
       searchField.text,
       everythingService ? everythingService.hiddenIds : {},
-      disabledKinds)
+      disabledKinds,
+      focusLeadKind)
     // Instant answers pin above every search result; prefix modes (ask,
     // clipboard, timer) replace the search results entirely.
     var answers = Answers.instantAnswers(searchField.text, answerContext())
