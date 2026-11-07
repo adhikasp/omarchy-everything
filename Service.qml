@@ -175,7 +175,6 @@ Item {
     { id: "update", title: "Update", terms: ["upgrade", "restart", "refresh"], argv: ["omarchy-menu", "summon", "update"] },
     { id: "system", title: "System (Power)", terms: ["power", "shutdown", "reboot", "logout"], argv: ["omarchy-menu", "summon", "system"] },
     { id: "system.lock", title: "System: Lock", terms: ["lock screen"], argv: ["omarchy-system-lock"] },
-    { id: "system.suspend", title: "System: Suspend", argv: ["systemctl", "suspend"] },
     { id: "system.logout", title: "System: Logout", terms: ["sign out", "log out"], argv: ["omarchy-system-logout"] },
     { id: "system.reboot", title: "System: Reboot", terms: ["restart"], argv: ["omarchy-system-reboot"] },
     { id: "system.shutdown", title: "System: Shutdown", terms: ["power off", "turn off"], argv: ["omarchy-system-shutdown"] },

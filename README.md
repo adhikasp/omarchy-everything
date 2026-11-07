@@ -90,7 +90,7 @@ That's it. The Omarchy menu stays one search away: type `setup`, `theme` or `upd
 
 **Optional extras:**
 - [opencode](https://opencode.ai) for `?` questions.
-- [Inter](https://rsms.me/inter/) (`sudo pacman -S inter-font`): the panel uses it when installed, otherwise Noto Sans.
+- The [Inter](https://rsms.me/inter/) font (package `inter-font`): the panel uses it when installed, otherwise Noto Sans.
 - A browser-tabs host for Chrome tab results. It is any process serving the local socket described in [providers](docs/providers.md); without one, Chrome appears only as its window.
 
 ## Fast, really
