@@ -74,7 +74,7 @@ Start with `?` and Everything runs [opencode](https://opencode.ai) in a project 
 omarchy plugin add https://github.com/adhikasp/omarchy-everything.git --enable --yes
 
 # build the Rust helper (needs a Rust toolchain, ~10 s)
-cd ~/.config/omarchy/plugins/b.everything/rust && cargo build --release
+cd ~/.config/omarchy/plugins/io.github.adhikasp.everything/rust && cargo build --release
 
 omarchy restart shell
 ```
@@ -91,7 +91,7 @@ That's it. The Omarchy menu stays one search away: type `setup`, `theme` or `upd
 **Optional extras:**
 - [opencode](https://opencode.ai) for `?` questions.
 - [Inter](https://rsms.me/inter/) (`sudo pacman -S inter-font`): the panel uses it when installed, otherwise Noto Sans.
-- The Screen Context Chrome extension, so Chrome tabs show up.
+- A browser-tabs host for Chrome tab results. It is any process serving the local socket described in [providers](docs/providers.md); without one, Chrome appears only as its window.
 
 ## Fast, really
 
@@ -110,7 +110,7 @@ Super+Space reaches the panel through a Hyprland global shortcut (about 12 ms, v
 | Source | Finds | Picking it |
 |---|---|---|
 | Hyprland | Every window on every workspace | focuses the window |
-| Chrome | Every tab (via the Screen Context extension) | switches to the tab |
+| Chrome | Every tab (needs the optional tabs socket, see [providers](docs/providers.md)) | switches to the tab |
 | Herdr | Sessions, workspaces, tabs, panes, agents | focuses the pane |
 | tmux, Kitty | Sessions, windows, panes | focuses the pane |
 | Neovim | Open buffers | jumps to the buffer |
@@ -128,7 +128,7 @@ Settings live in the plugin's entry in `~/.config/omarchy/shell.json`:
 
 ```json
 {
-  "id": "b.everything",
+  "id": "io.github.adhikasp.everything",
   "askWorkspace": "~/code/acme-api",
   "askModel": "provider/model-id",
   "currencies": ["EUR", "GBP", "JPY"]
@@ -175,12 +175,14 @@ More in [`docs/`](docs): [architecture](docs/architecture.md), [protocol](docs/p
 ## Update and uninstall
 
 ```bash
-omarchy plugin update b.everything   # then rebuild rust/ if the source changed
-omarchy plugin remove b.everything
+omarchy plugin update io.github.adhikasp.everything   # then rebuild rust/ if the source changed
+omarchy plugin remove io.github.adhikasp.everything
 ```
+
+Removal deletes the plugin folder. Also delete the plugin's entry from `~/.config/omarchy/shell.json`, the `SUPER + SPACE` bind from `~/.config/hypr/bindings.lua` (restore Omarchy's default with `hl.bind("SUPER + SPACE", ...)` if you want it back), and the cached rates file `~/.cache/omarchy-everything-rates.json`.
 
 ## Credits
 
-A fork of [`brianblakely/omarchy-everything`](https://github.com/brianblakely/omarchy-everything) that adds the Rust helper, fuzzy search, the redesigned panel and the quick actions. MIT licensed.
+Originally forked from [`brianblakely/omarchy-everything`](https://github.com/brianblakely/omarchy-everything) by Brian Blakely, whose original concept and provider code this builds on. This is a separate plugin with its own ID, so both can be installed. It adds the Rust helper, fuzzy search, the redesigned panel and the quick actions. MIT licensed.
 
 <sub>All screenshots and the GIF are rendered by `demo/record.sh` from fictional data, not a real desktop.</sub>

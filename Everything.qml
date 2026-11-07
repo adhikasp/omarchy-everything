@@ -13,8 +13,8 @@ import "InstantAnswers.js" as Answers
 
 Panel {
   id: root
-  moduleName: "b.everything"
-  ipcTarget: "b.everything"
+  moduleName: "io.github.adhikasp.everything"
+  ipcTarget: "io.github.adhikasp.everything"
   manageIpc: false
 
   // Hyprland delivers this straight into the running shell. The IPC route
@@ -28,7 +28,7 @@ Panel {
 
   readonly property var everythingService: root.bar && root.bar.shell
     && typeof root.bar.shell.serviceFor === "function"
-    ? root.bar.shell.serviceFor("b.everything") : null
+    ? root.bar.shell.serviceFor("io.github.adhikasp.everything") : null
   readonly property var appLibrary: root.bar && root.bar.shell
     && root.bar.shell.appLibrary !== undefined ? root.bar.shell.appLibrary : null
   readonly property var desktopEntries: DesktopEntries.applications.values || []

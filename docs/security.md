@@ -8,7 +8,7 @@ Omarchy's normal Git-based plugin manager; that fetch is not performed by the
 plugin.
 
 All subprocesses are created from argv arrays through
-`asyncio.create_subprocess_exec`, Quickshell `Process.command`, or
+`std::process::Command`, Quickshell `Process.command`, or
 `Quickshell.execDetached`. No command is passed through a shell. NUL and line
 breaks are rejected in argv values, and foreground commands have bounded
 timeouts. External provider failure is nonfatal.

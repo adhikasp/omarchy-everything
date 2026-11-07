@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "id": "b.everything",
+  "id": "io.github.adhikasp.everything",
   "name": "Everything",
-  "version": "0.0.3",
-  "author": "Brian Blakely",
+  "version": "0.1.0",
+  "author": "Adhika Setya Pramudita",
   "description": "List, search, and jump directly to every app, tab, buffer, agent... everything.",
   "license": "MIT",
   "kinds": ["service", "bar-widget"],

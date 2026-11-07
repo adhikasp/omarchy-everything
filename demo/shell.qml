@@ -139,8 +139,8 @@ ShellRoot {
     if (widgetComponent.status !== Component.Ready) {
       console.error("DEMO_ERROR widget: " + widgetComponent.errorString()); Qt.quit(); return
     }
-    widget = widgetComponent.createObject(barAnchor, { bar: mockBar, moduleName: "b.everything",
-      settings: { id: "b.everything", askWorkspace: "~/acme-api", currencies: ["EUR", "GBP", "JPY"] } })
+    widget = widgetComponent.createObject(barAnchor, { bar: mockBar, moduleName: "io.github.adhikasp.everything",
+      settings: { id: "io.github.adhikasp.everything", askWorkspace: "~/acme-api", currencies: ["EUR", "GBP", "JPY"] } })
     search = findNamed(widget, "everything-search")
     var popup = findNamed(widget, "everything-popup")
     card = findNamed(popup, "everything-card")
@@ -163,7 +163,7 @@ ShellRoot {
 
   QtObject {
     id: mockShell
-    function serviceFor(id) { return id === "b.everything" ? root.service : null }
+    function serviceFor(id) { return id === "io.github.adhikasp.everything" ? root.service : null }
     function updateEntryInline(_moduleName, _settings) { return true }
   }
 

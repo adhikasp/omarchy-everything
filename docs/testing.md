@@ -176,4 +176,4 @@ single refresh followed by a visible stale notification.
   the pointer does not steal the keyboard highlight; move it deliberately and
   confirm the highlight follows exactly one row. Repeat across a list refresh.
 - Hide rows, close/reopen the panel, and wait for an automatic refresh: they
-  remain hidden. Reload `b.everything` or `omarchy-shell`: they return.
+  remain hidden. Reload `io.github.adhikasp.everything` or `omarchy-shell`: they return.

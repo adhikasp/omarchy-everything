@@ -189,7 +189,7 @@ Item {
 
   Process {
     id: menuRoutesProc
-    command: [Quickshell.env("HOME") + "/.config/omarchy/plugins/b.everything/scripts/omarchy-menu-routes"]
+    command: [Quickshell.env("HOME") + "/.config/omarchy/plugins/io.github.adhikasp.everything/scripts/omarchy-menu-routes"]
     stdout: StdioCollector {
       onStreamFinished: {
         try {

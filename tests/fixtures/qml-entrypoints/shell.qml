@@ -26,7 +26,7 @@ ShellRoot {
   function manifestData() {
     return {
       schemaVersion: 1,
-      id: "b.everything",
+      id: "io.github.adhikasp.everything",
       name: "Everything",
       version: "0.0.1-test",
       kinds: ["service", "bar-widget"],
@@ -505,7 +505,7 @@ ShellRoot {
     }
     widgetObject = widgetComponent.createObject(host, {
       bar: mockBar,
-      moduleName: "b.everything",
+      moduleName: "io.github.adhikasp.everything",
       settings: ({})
     })
     if (!widgetObject) {
@@ -515,7 +515,7 @@ ShellRoot {
     }
     widgetPeer = widgetComponent.createObject(host, {
       bar: mockPeerBar,
-      moduleName: "b.everything",
+      moduleName: "io.github.adhikasp.everything",
       settings: ({})
     })
     if (!widgetPeer) {
@@ -531,9 +531,9 @@ ShellRoot {
 
   QtObject {
     id: mockShell
-    function serviceFor(id) { return id === "b.everything" ? root.serviceObject : null }
+    function serviceFor(id) { return id === "io.github.adhikasp.everything" ? root.serviceObject : null }
     function updateEntryInline(moduleName, settings) {
-      if (moduleName !== "b.everything") return false
+      if (moduleName !== "io.github.adhikasp.everything") return false
       root.persistenceCalls += 1
       root.persistedSettings = JSON.parse(JSON.stringify(settings))
       if (root.widgetObject) root.widgetObject.settings = root.persistedSettings
