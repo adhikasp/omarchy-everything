@@ -1,0 +1,5 @@
+#!/bin/sh
+# Demo stand-in: one fictional reminder, never touches the real timers.
+if [ "$1 $2" = "reminder show" ]; then
+  echo '{"count":1,"active":true,"tooltip":"1 reminder","reminders":[{"unit":"demo","label":"Stand-up","remaining":"12m","atTime":"10:00"}]}'
+fi

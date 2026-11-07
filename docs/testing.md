@@ -46,6 +46,16 @@ The suite performs:
   ranking metadata; unavailable snapshots; and focus failures before routing;
 - `omarchy plugin validate .` against the installed current manifest schema.
 
+## README media
+
+`demo/record.sh` regenerates `docs/media/` (lossless WebP stills and
+`demo.gif`) by running the real panel against fictional data: `demo/helper.py`
+serves `demo/items.json`, a temp home holds the demo clipboard and rates, and
+`demo/fake-bin` shadows `omarchy` and `timedatectl`. `demo/shell.qml` types
+each scene and grabs only its own card item, so the live desktop never appears
+in the output; `demo/compose.py` adds the backdrop, shadow and GIF timing. It
+needs a running Wayland session (the panel briefly appears on screen).
+
 ## Live helper smoke test
 
 To inspect live discovery without activating anything, start the helper,

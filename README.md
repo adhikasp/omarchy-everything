@@ -2,116 +2,175 @@
 
 # Everything
 
-**One keystroke. Every window, tab, terminal, editor buffer and AI agent on your desktop.**<br>
-Type a few letters, hit <kbd>Enter</kbd>, and you're there.
+### <kbd>Super</kbd> + <kbd>Space</kbd>. Type. You're there.
 
-An [Omarchy](https://omarchy.org) plugin, now with a Rust engine that starts in **~1 ms**.
+Every window, browser tab, terminal pane, editor buffer and AI agent on your desktop, in one list.<br>
+Plus a calculator, currency and unit converter, world clock, timer, clipboard history and an AI agent,<br>
+all in the same search box.
 
-<img src="docs/media/demo.gif" alt="Everything opening instantly, filtering to Hacker News as you type 'hack', then to a running agent with 'auth'" width="760">
+An [Omarchy](https://omarchy.org) plugin with a Rust engine that is ready in **~1 ms**.
+
+<img src="docs/media/demo.gif" alt="Everything: jumping to a window, converting currency, a time zone, a calculation, a timer, clipboard history, and asking an AI agent, all from one search box" width="760">
 
 </div>
 
 ---
 
-## Why you'll like it
+## Stop hunting for windows
 
-- **Everything in one list.** Windows, Chrome tabs, Herdr workspaces and agents, tmux, Kitty, Neovim buffers, apps and the Omarchy menu. No more *"which workspace was that on?"*
-- **Jump, don't launch.** Picking a result focuses the exact window, switches to the exact tab, or lands on the exact agent pane. It never opens a duplicate.
-- **Fuzzy and fast.** fzf-style matching, so `hck` finds *Hacker News* and `auth` finds the agent refactoring your auth middleware. <kbd>Enter</kbd> takes the top hit.
-- **Keyboard first.** Vim keys, <kbd>Ctrl</kbd>+<kbd>N</kbd>/<kbd>P</kbd>, <kbd>/</kbd> to search, <kbd>X</kbd> to hide noise.
-- **Feels native.** A 45 ms fade, centered card, and the Omarchy theme.
+You have twelve windows on five workspaces, forty Chrome tabs and three agents running in a terminal multiplexer. *Which workspace was that PR on?*
+
+Everything answers with one keystroke. It lists what is **already open**, and picking a result **jumps to it**: the exact window, the exact Chrome tab, the exact agent pane. It never launches a duplicate.
 
 <p align="center">
-  <img src="docs/media/overview.png" alt="Everything showing windows, browser tabs, agents and workspaces in one list" width="46%">
-  &nbsp;
-  <img src="docs/media/search.png" alt="Searching for 'hack' narrows the list to matching browser tabs" width="46%">
+  <img src="docs/media/overview.webp" alt="Windows, browser tabs and agents grouped in one list" width="49%">
+  <img src="docs/media/search.webp" alt="Typing 'auth' narrows to the matching window and agent, with matched letters highlighted" width="49%">
 </p>
 
-## Fast
+- **Fuzzy, fzf-style.** `hck` finds *Hacker News*, `auth` finds the agent refactoring your auth middleware. The letters that matched light up.
+- **<kbd>Enter</kbd> takes the highlighted hit.** The highlight is always visible, and <kbd>↑</kbd> <kbd>↓</kbd> move it while you keep typing.
+- **Looks like it belongs.** Same palette as the Omarchy menu, follows your theme, crisp on HiDPI.
 
-The helper that gathers everything is a small Rust binary. The original Python helper took 325 ms to start and 486 ms for a cold scan, and used 37 MB. Numbers from this fork, median of 15 runs on a Ryzen 5 5560U:
+## Type anything else, too
 
-| | |
-|---|---:|
-| Process start → ready | **1.3 ms** |
-| Cold start → full scan | **17.5 ms** |
-| Warm full scan | **15 ms** |
-| Memory (RSS) | **4 MB** |
+The search box is also a toolbox. Answers appear as the first row; <kbd>Enter</kbd> does the obvious thing.
 
-Super+Space reaches the panel through a Hyprland global shortcut instead of spawning `qs ipc`, which is about 12 ms rather than 55 ms. The helper stays warm for two minutes after you close the panel, so reopening is instant.
+| Type | You get | <kbd>Enter</kbd> |
+|---|---|---|
+| `15% of 2400`, `sqrt(2)*1e3`, `2^10` | **Calculator** with percentages, functions, hex and implicit multiply | copies the number |
+| `100 usd`, `1.5k eur to jpy`, `rp 50rb in sgd` | **Currency**, at daily ECB rates | copies the amount |
+| `5 km in mi`, `100 f to c`, `2 tb` | **Units**: length, weight, volume, temperature, data, speed and more | copies |
+| `3pm tokyo`, `15:00 london to nyc`, `time in sydney` | **World clock** in your local time, with the day shift | copies the time |
+| `timer 25m tea`, `remind me in 1h to stretch` | **Timer** via Omarchy reminders; `timers` lists and clears them | starts it |
+| `clip`, `clip docker` | **Clipboard history**, images included as thumbnails | pastes it |
+| `? why is the checkout test flaky` | **Ask an AI agent** ([opencode](https://opencode.ai)) in your project | copies the answer |
+
+<p align="center">
+  <img src="docs/media/convert.webp" alt="100 usd converted to euro, pound and yen" width="49%">
+  <img src="docs/media/time.webp" alt="3pm in Tokyo shown in local time" width="49%">
+  <img src="docs/media/timer.webp" alt="A 25 minute tea timer next to a running reminder" width="49%">
+  <img src="docs/media/calc.webp" alt="15% of 2400 is 360" width="49%">
+</p>
+
+### Clipboard history, searchable
+
+`clip` shows everything you copied, newest first, images too. Type to filter, then <kbd>Enter</kbd> pastes it straight into the window you came from.
+
+<img src="docs/media/clipboard.webp" alt="Clipboard history with links, commands and SQL" width="760">
+
+### Ask an agent without leaving the keyboard
+
+Start with `?` and Everything runs [opencode](https://opencode.ai) in a project you choose. The answer lands in the panel a few seconds later, formatted.
+
+- <kbd>Enter</kbd> copies the answer.
+- <kbd>Ctrl</kbd>+<kbd>O</kbd> reopens the same conversation in opencode, so you can keep going.
+- Closed the panel too early? The answer arrives as a notification.
+
+<img src="docs/media/ask.webp" alt="Asking why a test is flaky and getting a formatted answer" width="760">
 
 ## Install
-
-This is a fork of [`brianblakely/omarchy-everything`](https://github.com/brianblakely/omarchy-everything) that adds the Rust helper, fuzzy search and a faster open path.
 
 ```bash
 omarchy plugin add https://github.com/adhikasp/omarchy-everything.git --enable --yes
 
-# build the Rust helper (needs a Rust toolchain; ~10 s)
+# build the Rust helper (needs a Rust toolchain, ~10 s)
 cd ~/.config/omarchy/plugins/b.everything/rust && cargo build --release
 
 omarchy restart shell
 ```
 
-The build step is required: the plugin has no other helper.
-
-## Open it
-
-Click the arrow in the bar, or bind a key. For the fastest open, use the global shortcut in `~/.config/hypr/bindings.lua`:
+Then make <kbd>Super</kbd>+<kbd>Space</kbd> open it. Add this to `~/.config/hypr/bindings.lua`:
 
 ```lua
 hl.unbind("SUPER + SPACE")
 hl.bind("SUPER + SPACE", hl.dsp.global("omarchy-everything:toggle"), { description = "Everything" })
 ```
 
-Prefer the stock route? This works too, just a few tens of ms slower:
+That's it. The Omarchy menu stays one search away: type `setup`, `theme` or `update`.
 
-```lua
-o.bind("SUPER + SPACE", "Everything", "omarchy-shell shell toggle b.everything")
-```
+**Optional extras:**
+- [opencode](https://opencode.ai) for `?` questions.
+- [Inter](https://rsms.me/inter/) (`sudo pacman -S inter-font`): the panel uses it when installed, otherwise Noto Sans.
+- The Screen Context Chrome extension, so Chrome tabs show up.
+
+## Fast, really
+
+The helper that gathers everything is a small Rust binary (the original was Python). Median of 15 runs on a Ryzen 5 5560U:
+
+| | Rust | Python before |
+|---|---:|---:|
+| Process start → ready | **1.3 ms** | 325 ms |
+| Cold start → full scan | **17.5 ms** | 486 ms |
+| Memory | **4 MB** | 37 MB |
+
+Super+Space reaches the panel through a Hyprland global shortcut (about 12 ms, versus 55 ms for spawning `qs ipc`), and the helper stays warm for two minutes after you close it.
 
 ## What it finds
 
-| Source | Finds | Activation |
+| Source | Finds | Picking it |
 |---|---|---|
-| Hyprland | Every window, on every workspace | Focus the window |
-| Chrome | Every tab (via the Screen Context extension) | Switch to the tab |
-| Herdr | Sessions, workspaces, tabs, panes, agents | Focus the pane |
-| tmux, Kitty | Sessions, windows, panes | Focus the pane |
-| Neovim | Open buffers | Jump to the buffer |
-| Apps, Omarchy menu | Installed apps and menu entries | Search-only, launched on match |
+| Hyprland | Every window on every workspace | focuses the window |
+| Chrome | Every tab (via the Screen Context extension) | switches to the tab |
+| Herdr | Sessions, workspaces, tabs, panes, agents | focuses the pane |
+| tmux, Kitty | Sessions, windows, panes | focuses the pane |
+| Neovim | Open buffers | jumps to the buffer |
+| Apps, Omarchy menu | Installed apps and every menu action | launches it (shown once you type) |
 
-## Configure
+Ghostty, Foot and Alacritty windows are listed as windows; the tabs and panes inside them are not enumerated.
 
-Right-click the bar icon to choose which groups appear.
+## Make it yours
 
-<img src="docs/media/settings.png" alt="Settings panel with a toggle per group" width="360">
+Right-click the bar icon to choose which groups appear. Every quick action can be switched off too.
 
-Ghostty, Foot and Alacritty windows are listed as ordinary windows. Tabs and panes inside them are not enumerated.
+<img src="docs/media/settings.webp" alt="Group checklist with a checkbox per group" width="420">
+
+Settings live in the plugin's entry in `~/.config/omarchy/shell.json`:
+
+```json
+{
+  "id": "b.everything",
+  "askWorkspace": "~/code/acme-api",
+  "askModel": "provider/model-id",
+  "currencies": ["EUR", "GBP", "JPY"]
+}
+```
+
+- `askWorkspace`: the folder `?` questions run in. Default: home.
+- `askModel`: optional; otherwise opencode's default model.
+- `currencies`: what a bare `100 usd` converts into. Default: USD and EUR.
 
 ## Keyboard
 
-| Keys | Action |
+| Keys | Does |
 |---|---|
-| <kbd>J</kbd> <kbd>K</kbd> / <kbd>↓</kbd> <kbd>↑</kbd>, <kbd>Ctrl</kbd>+<kbd>N</kbd> <kbd>P</kbd> | Move through results |
-| <kbd>H</kbd> <kbd>L</kbd> / <kbd>←</kbd> <kbd>→</kbd> | Collapse or expand a group |
-| <kbd>g</kbd> <kbd>G</kbd>, <kbd>Home</kbd> <kbd>End</kbd> | Top or bottom |
-| <kbd>Ctrl</kbd>+<kbd>U</kbd> <kbd>D</kbd>, <kbd>PgUp</kbd> <kbd>PgDn</kbd> | Page up or down |
-| <kbd>Enter</kbd> | Activate the highlighted result (the top hit while searching) |
-| <kbd>/</kbd>, <kbd>Tab</kbd> | Focus search, or switch between search and list |
-| <kbd>X</kbd>, <kbd>Backspace</kbd>, <kbd>Delete</kbd> | Hide the highlighted result until restart |
-| <kbd>Esc</kbd> | Clear the search, then close |
+| type | search, or start a quick action |
+| <kbd>↑</kbd> <kbd>↓</kbd>, <kbd>Ctrl</kbd>+<kbd>N</kbd> <kbd>P</kbd>, <kbd>PgUp</kbd> <kbd>PgDn</kbd> | move the highlight while typing |
+| <kbd>Enter</kbd> | open, copy, paste or ask, depending on the row |
+| <kbd>Tab</kbd> | browse mode: vim keys, <kbd>←</kbd> <kbd>→</kbd> to fold groups, <kbd>Del</kbd> to hide a row, <kbd>/</kbd> to search again |
+| <kbd>Ctrl</kbd>+<kbd>O</kbd> | on an answer: open the conversation in opencode |
+| <kbd>Esc</kbd> | clear the search, then close |
+
+The footer always shows the keys that work right now.
+
+## Private by default
+
+- Everything runs locally. The **only** network request is the daily exchange-rate file from the ECB (via [frankfurter.dev](https://frankfurter.dev)), fetched only when you type a currency, cached, and carrying no data about you.
+- The calculator is a small parser, not `eval`. Titles, clipboard entries and agent output are rendered as plain text or sanitised Markdown, so a malicious tab title can't inject markup.
+- Your text reaches commands as arguments, never spliced into a shell string.
+
+Details: [security](docs/security.md), [instant answers](docs/instant-answers.md).
 
 ## Under the hood
 
-The QML UI talks to a Rust helper over a small versioned JSON-lines protocol. Hyprland, Chrome, Herdr, Kitty, tmux and Neovim are read natively in Rust, with no runtime other than the binary itself.
+A QML panel talks to the Rust helper over a small versioned JSON-lines protocol. Quick actions are pure functions in [`InstantAnswers.js`](InstantAnswers.js), unit tested with fixed rates, clocks and hostile input.
 
 ```sh
-cd rust && cargo build --release
-python3 rust/tools/bench.py    # cold start and scan timings
+tests/all.sh                  # Rust, model and QML tests
+python3 rust/tools/bench.py   # cold start and scan timings
+demo/record.sh                # regenerate the README media from fictional data
 ```
 
-More in [`docs/`](docs): [architecture](docs/architecture.md), [protocol](docs/protocol.md), [providers](docs/providers.md), [security](docs/security.md), [testing](docs/testing.md). Kitty support is ported but untested here, because Kitty isn't installed on the dev machine.
+More in [`docs/`](docs): [architecture](docs/architecture.md), [protocol](docs/protocol.md), [providers](docs/providers.md), [instant answers](docs/instant-answers.md), [security](docs/security.md), [testing](docs/testing.md). Kitty support is ported but untested here.
 
 ## Update and uninstall
 
@@ -122,6 +181,6 @@ omarchy plugin remove b.everything
 
 ## Credits
 
-Built on [`brianblakely/omarchy-everything`](https://github.com/brianblakely/omarchy-everything). MIT licensed.
+A fork of [`brianblakely/omarchy-everything`](https://github.com/brianblakely/omarchy-everything) that adds the Rust helper, fuzzy search, the redesigned panel and the quick actions. MIT licensed.
 
-<sub>The screenshots and GIF use fictional demo data, not a real desktop.</sub>
+<sub>All screenshots and the GIF are rendered by `demo/record.sh` from fictional data, not a real desktop.</sub>

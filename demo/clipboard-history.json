@@ -1,0 +1,26 @@
+[
+  {
+    "type": "text",
+    "text": "https://github.com/acme/api/pull/482"
+  },
+  {
+    "type": "text",
+    "text": "cargo test -p checkout -- --nocapture"
+  },
+  {
+    "type": "text",
+    "text": "SELECT id, total FROM invoices WHERE status = 'open';"
+  },
+  {
+    "type": "text",
+    "text": "Thanks! I'll have the migration ready by Friday."
+  },
+  {
+    "type": "text",
+    "text": "ACME-4821"
+  },
+  {
+    "type": "text",
+    "text": "export DATABASE_URL=postgres://localhost/acme_dev"
+  }
+]

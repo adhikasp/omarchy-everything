@@ -1,0 +1,15 @@
+[
+  {"id":"w1","kind":"window","provider":"Hyprland","title":"acme-api: refactor auth","iconHints":["com.mitchellh.ghostty"],"badges":["Window","Workspace 1"],"recency":90},
+  {"id":"w2","kind":"window","provider":"Hyprland","title":"Pull request #482 · acme/api - Google Chrome","iconHints":["google-chrome"],"badges":["Window","Workspace 2"],"recency":80},
+  {"id":"w3","kind":"window","provider":"Hyprland","title":"Spotify Premium","iconHints":["spotify"],"badges":["Window","Workspace 3"],"recency":70},
+  {"id":"t1","kind":"browser-tab","provider":"Chrome","title":"Pull request #482 · acme/api","context":"github.com","recency":60},
+  {"id":"t2","kind":"browser-tab","provider":"Chrome","title":"std::sync::mpsc - Rust","context":"doc.rust-lang.org","recency":50},
+  {"id":"t3","kind":"browser-tab","provider":"Chrome","title":"Hacker News","context":"news.ycombinator.com","recency":40},
+  {"id":"t4","kind":"browser-tab","provider":"Chrome","title":"Hyprland - ArchWiki","context":"wiki.archlinux.org","recency":30},
+  {"id":"a1","kind":"herdr-agent","provider":"Herdr","title":"Refactor auth middleware","badges":["Working"],"recency":20},
+  {"id":"a2","kind":"herdr-agent","provider":"Herdr","title":"Fix flaky checkout test","badges":["Blocked"],"recency":19},
+  {"id":"a3","kind":"herdr-agent","provider":"Herdr","title":"Write invoices migration","badges":["Idle"],"recency":18},
+  {"id":"h1","kind":"herdr-workspace","provider":"Herdr","title":"acme-api","badges":["Working"],"recency":10},
+  {"id":"h2","kind":"herdr-workspace","provider":"Herdr","title":"billing","badges":["Blocked"],"recency":9},
+  {"id":"n1","kind":"neovim-buffer","provider":"Neovim","title":"middleware/auth.rs","context":"/home/demo/acme-api","recency":5}
+]
