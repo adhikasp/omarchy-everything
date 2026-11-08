@@ -258,12 +258,36 @@ fn url_host(url: &str) -> String {
     host.split(':').next().unwrap_or("").to_lowercase()
 }
 
+/// Decode a `data:image/...;base64,` favicon from the extension into a
+/// content-addressed file under the user cache dir and return its path ("" on
+/// anything unexpected). Only PNG, ICO, GIF, WebP and JPEG payloads are kept.
+fn favicon_file(data_url: &str) -> String {
+    use base64::Engine;
+    use sha2::{Digest, Sha256};
+    let Some(rest) = data_url.strip_prefix("data:image/") else { return String::new() };
+    let Some((kind, b64)) = rest.split_once(";base64,") else { return String::new() };
+    let ext = match kind { "png" => "png", "x-icon" | "vnd.microsoft.icon" => "ico", "gif" => "gif", "webp" => "webp", "jpeg" => "jpg", _ => return String::new() };
+    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(b64) else { return String::new() };
+    if bytes.is_empty() || bytes.len() > 64 * 1024 { return String::new(); }
+    let cache = std::env::var("XDG_CACHE_HOME").ok().filter(|v| v.starts_with('/')).or_else(|| std::env::var("HOME").ok().map(|h| format!("{h}/.cache"))).unwrap_or_default();
+    if cache.is_empty() { return String::new(); }
+    let dir = format!("{cache}/omarchy-everything/favicons");
+    let digest: String = Sha256::digest(&bytes).iter().take(12).map(|b| format!("{b:02x}")).collect();
+    let path = format!("{dir}/{digest}.{ext}");
+    if std::path::Path::new(&path).exists() { return path; }
+    use std::os::unix::fs::DirBuilderExt;
+    if std::fs::DirBuilder::new().recursive(true).mode(0o700).create(&dir).is_err() { return String::new(); }
+    let tmp = format!("{path}.tmp{}", std::process::id());
+    if std::fs::write(&tmp, &bytes).is_err() || std::fs::rename(&tmp, &path).is_err() { let _ = std::fs::remove_file(&tmp); return String::new(); }
+    path
+}
+
 pub fn chrome_scan(ctx: &Context) -> Res<ProviderResult> {
     let mut result = ProviderResult { provider: "chrome", ..Default::default() };
     if !ctx.clients.iter().any(is_chrome_client) {
         return Ok(result);
     }
-    let Ok(response) = unix_json_request(&chrome_socket(), &json!({"op": "tabs"}), 2.0) else { return Ok(result) };
+    let Ok(response) = unix_json_request(&chrome_socket(), &json!({"op": "tabs", "icons": true}), 2.0) else { return Ok(result) };
     if response.get("ok") != Some(&Value::Bool(true)) {
         let detail = response.get("error").and_then(Value::as_str).unwrap_or("failed");
         result.warnings.push(format!("Chrome tabs: {detail}"));
@@ -279,6 +303,7 @@ pub fn chrome_scan(ctx: &Context) -> Res<ProviderResult> {
         let title = if !page_title.is_empty() { page_title.clone() } else if !url.is_empty() { url.clone() } else { "New Tab".into() };
         let mut thing = Thing::new(stable_id("chrome", &[&tab_id.to_string()]), "browser-tab", "Chrome", &title);
         thing.icon_hints = vec!["google-chrome".into()];
+        thing.icon_file = favicon_file(&text(tab, "favIcon"));
         thing.context = url_host(&url);
         thing.search_terms = vec!["chrome".into(), url.clone()];
         thing.badges = vec!["Tab".into()];
@@ -674,6 +699,14 @@ mod tests {
         assert_eq!(url_host("https://User@News.YCombinator.com:8443/item?id=1"), "news.ycombinator.com");
         assert_eq!(url_host("chrome://extensions"), "extensions");
         assert_eq!(url_host("not a url"), "");
+    }
+
+    #[test]
+    fn favicons_reject_non_images_and_bad_payloads() {
+        assert_eq!(favicon_file("https://example.com/favicon.ico"), "");
+        assert_eq!(favicon_file("data:text/html;base64,PGI+"), "");
+        assert_eq!(favicon_file("data:image/svg+xml;base64,PHN2Zz4="), "");
+        assert_eq!(favicon_file("data:image/png;base64,!!!"), "");
     }
 
     #[test]

@@ -1072,6 +1072,7 @@ function sameRenderedTraits(left, right) {
     && String(left.provider || "") === String(right.provider || "")
     && String(left.title || "") === String(right.title || "")
     && sameStringList(left.iconHints, right.iconHints)
+    && String(left.iconFile || "") === String(right.iconFile || "")
     && String(left.context || "") === String(right.context || "")
     && String(left.parentId || "") === String(right.parentId || "")
     && (left.active === true) === (right.active === true)

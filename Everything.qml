@@ -691,6 +691,13 @@ Panel {
     return source && source !== generic ? source : ""
   }
 
+  // Only absolute files the helper wrote under the user's favicon cache.
+  function faviconSource(item) {
+    var path = String(item && item.iconFile || "")
+    if (path.indexOf("/omarchy-everything/favicons/") < 0 || path.indexOf("..") >= 0) return ""
+    return "file://" + path
+  }
+
   function hasIconHints(item) {
     var kind = String(item && item.kind || "")
     return kind === "window" || kind === "app" || kind === "browser-tab"
@@ -1441,6 +1448,7 @@ Panel {
           readonly property bool isAnswer: Answers.isAnswerKind(modelData.kind)
           readonly property bool emphasis: modelData.emphasis === true
           readonly property string thumbnail: String(modelData.thumbnail || "")
+          readonly property string faviconSource: root.faviconSource(modelData)
           // The highlight is always shown: Enter in the search line opens it.
           readonly property bool highlighted: !groupCollapsed && root.resultsModeOpen
             && resultList.currentIndex === index
@@ -1506,13 +1514,30 @@ Panel {
               sourceSize.height: height * Screen.devicePixelRatio
             }
 
+            // Site favicon cached by the helper (Chrome tabs); keeps its own colors.
+            Image {
+              id: faviconImage
+              objectName: "everything-favicon-" + row.index
+              anchors.centerIn: parent
+              width: Math.min(parent.width, root.iconPx + Style.space(2))
+              height: width
+              visible: row.faviconSource.length > 0 && status === Image.Ready
+              source: row.faviconSource
+              fillMode: Image.PreserveAspectFit
+              asynchronous: true
+              smooth: true
+              mipmap: true
+              sourceSize.width: width * Screen.devicePixelRatio
+              sourceSize.height: height * Screen.devicePixelRatio
+            }
+
             Image {
               id: applicationIcon
               objectName: "everything-window-icon-" + row.index
               anchors.centerIn: parent
               width: Math.min(parent.width, root.iconPx + Style.space(2))
               height: width
-              visible: row.windowAppGlyph.length === 0
+              visible: row.windowAppGlyph.length === 0 && !faviconImage.visible
                 && row.windowIconSource.length > 0 && status !== Image.Error
               source: row.windowIconSource
               fillMode: Image.PreserveAspectFit
@@ -1545,7 +1570,7 @@ Panel {
               id: fallbackThingIcon
               anchors.fill: parent
               visible: row.windowAppGlyph.length === 0 && !applicationIcon.visible
-                && row.thumbnail.length === 0
+                && !faviconImage.visible && row.thumbnail.length === 0
               textFormat: Text.PlainText
               text: Model.kindIcon(row.modelData.kind)
               color: row.iconColor

@@ -87,6 +87,7 @@ Every public item contains:
 | `kind` | One supported actionable thing kind |
 | `provider` | Human-readable provider badge; browser and application tabs use their owning application label |
 | `title` | Primary display title and the only searchable item field |
+| `iconFile` | Absolute path of a helper-written favicon image under `$XDG_CACHE_HOME/omarchy-everything/favicons/` (Chrome tabs; empty otherwise); QML loads it only from that directory |
 | `iconHints` | Ordered, presentation-only icon/application identities; populated for managed windows from Hyprland client data |
 | `context` | Cwd, application, workspace, or container context; never searched |
 | `searchTerms` | Provider-supplied aliases retained in the contract but not used by panel matching |

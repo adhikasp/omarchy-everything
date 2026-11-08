@@ -94,3 +94,11 @@ lines, and environment values are never serialized into the public result
 list.
 
 ## Persistence
+## Favicon cache
+
+For Chrome tabs the Screen Context extension can return each site's favicon as
+a `data:image/...;base64,` URL. The helper accepts only PNG, ICO, GIF, WebP or
+JPEG payloads up to 64 KiB, writes them content-addressed (SHA-256 prefix) to
+`$XDG_CACHE_HOME/omarchy-everything/favicons/` (mode 0700), and publishes the
+path as `iconFile`. QML renders it only from that directory. The helper makes
+no network requests for icons.
