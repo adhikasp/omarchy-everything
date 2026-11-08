@@ -100,6 +100,7 @@ const item = (id, title, context, extra = {}) => ({
   assert.equal(sandbox.contextLeadKind("com.mitchellh.ghostty", rows), "herdr-agent")
   assert.deepEqual(Array.from(sandbox.rank(rows.slice(0, 2), "", {}, [], "herdr-agent"), row => row.id),
     ["window", "browser"], "a terminal without Herdr agents falls back to the default order")
+  assert.equal(sandbox.contextLeadKind("herdr-app", rows), "herdr-agent", "the Herdr app leads with its agents")
   assert.equal(sandbox.contextLeadKind("org.gnome.Nautilus", rows), "")
   assert.deepEqual(ids(""), ["window", "browser", "agent"], "no context keeps the default order")
   assert.deepEqual(ids("herdr-agent"), ["agent", "window", "browser"], "terminal focus leads with agents")

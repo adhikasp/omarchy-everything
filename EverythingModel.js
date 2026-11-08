@@ -877,12 +877,13 @@ function rankedEntry(item, query, sourceIndex, relations) {
 
 // The window that had focus when the panel opened decides which group leads
 // the list: a terminal puts Herdr agents first (a no-op without any), Chrome
-// puts its tabs first, anything else keeps the default window-first order.
+// puts its tabs first, the Herdr app itself (class herdr-app) leads with its
+// agents too, anything else keeps the default window-first order.
 function contextLeadKind(windowClass) {
   var cls = normalized(windowClass)
   if (!cls) return ""
   if (/chrome|chromium/.test(cls)) return "browser-tab"
-  if (/ghostty|kitty|foot|alacritty|wezterm|xterm/.test(cls)) return "herdr-agent"
+  if (/herdr|ghostty|kitty|foot|alacritty|wezterm|xterm/.test(cls)) return "herdr-agent"
   return ""
 }
 
