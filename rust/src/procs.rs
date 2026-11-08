@@ -21,30 +21,51 @@ impl ProcTable {
     pub fn read() -> Self {
         let uid = current_uid();
         let mut procs = HashMap::new();
-        let Ok(entries) = std::fs::read_dir("/proc") else { return ProcTable { procs } };
+        let Ok(entries) = std::fs::read_dir("/proc") else {
+            return ProcTable { procs };
+        };
         for entry in entries.flatten() {
             let name = entry.file_name();
-            let Some(pid) = name.to_str().and_then(|n| n.parse::<i64>().ok()) else { continue };
+            let Some(pid) = name.to_str().and_then(|n| n.parse::<i64>().ok()) else {
+                continue;
+            };
             let base = entry.path();
             match std::fs::metadata(&base) {
                 Ok(meta) if meta.uid() == uid => {}
                 _ => continue,
             }
-            let Ok(stat) = std::fs::read_to_string(base.join("stat")) else { continue };
-            let (Some(open), Some(close)) = (stat.find('('), stat.rfind(')')) else { continue };
+            let Ok(stat) = std::fs::read_to_string(base.join("stat")) else {
+                continue;
+            };
+            let (Some(open), Some(close)) = (stat.find('('), stat.rfind(')')) else {
+                continue;
+            };
             let comm = stat[open + 1..close].to_string();
             let fields: Vec<&str> = stat[close + 2..].split_whitespace().collect();
-            let (Some(ppid), Some(start_time)) = (fields.get(1).and_then(|f| f.parse().ok()), fields.get(19)) else {
+            let (Some(ppid), Some(start_time)) =
+                (fields.get(1).and_then(|f| f.parse().ok()), fields.get(19))
+            else {
                 continue;
             };
             let start_time = start_time.to_string();
-            let Ok(raw) = std::fs::read(base.join("cmdline")) else { continue };
+            let Ok(raw) = std::fs::read(base.join("cmdline")) else {
+                continue;
+            };
             let argv = raw
                 .split(|byte| *byte == 0)
                 .filter(|part| !part.is_empty())
                 .map(|part| String::from_utf8_lossy(part).into_owned())
                 .collect();
-            procs.insert(pid, Proc { pid, ppid, start_time, comm, argv });
+            procs.insert(
+                pid,
+                Proc {
+                    pid,
+                    ppid,
+                    start_time,
+                    comm,
+                    argv,
+                },
+            );
         }
         ProcTable { procs }
     }
@@ -63,7 +84,10 @@ impl ProcTable {
     }
 
     pub fn ancestor_pid_in(&self, pid: i64, candidates: &[i64]) -> Option<i64> {
-        self.ancestors(pid).into_iter().map(|p| p.pid).find(|p| candidates.contains(p))
+        self.ancestors(pid)
+            .into_iter()
+            .map(|p| p.pid)
+            .find(|p| candidates.contains(p))
     }
 
     pub fn named(&self, name: &str) -> Vec<&Proc> {
@@ -71,7 +95,10 @@ impl ProcTable {
             .values()
             .filter(|p| {
                 p.comm.eq_ignore_ascii_case(name)
-                    || p.argv.first().map(|a| basename(a).eq_ignore_ascii_case(name)).unwrap_or(false)
+                    || p.argv
+                        .first()
+                        .map(|a| basename(a).eq_ignore_ascii_case(name))
+                        .unwrap_or(false)
             })
             .collect()
     }
@@ -96,7 +123,9 @@ pub fn canonical_path(value: &str) -> String {
 
 pub fn current_uid() -> u32 {
     // /proc/self is owned by the effective uid; avoids a libc dependency.
-    std::fs::metadata("/proc/self").map(|meta| meta.uid()).unwrap_or(0)
+    std::fs::metadata("/proc/self")
+        .map(|meta| meta.uid())
+        .unwrap_or(0)
 }
 
 impl ProcTable {
@@ -115,7 +144,9 @@ impl ProcTable {
         if self.get(pid).is_none() {
             return values;
         }
-        let Ok(file) = std::fs::File::open(format!("/proc/{pid}/environ")) else { return values };
+        let Ok(file) = std::fs::File::open(format!("/proc/{pid}/environ")) else {
+            return values;
+        };
         let mut raw = Vec::new();
         if file.take(256 * 1024 + 1).read_to_end(&mut raw).is_err() || raw.len() > 256 * 1024 {
             return values;

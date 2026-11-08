@@ -30,7 +30,11 @@ pub struct State {
 pub type Shared = Arc<Mutex<State>>;
 
 fn new_context(state: &Shared) -> Context {
-    Context { procs: ProcTable::read(), meta: state.lock().unwrap().metadata.clone(), ..Default::default() }
+    Context {
+        procs: ProcTable::read(),
+        meta: state.lock().unwrap().metadata.clone(),
+        ..Default::default()
+    }
 }
 
 fn scan_provider(name: &str, ctx: &Context) -> Res<ProviderResult> {
@@ -65,37 +69,60 @@ fn label(provider: &str) -> &str {
 }
 
 fn protocol_error(request_id: &str, message: &str) {
-    emit(json!({"version": 1, "type": "error", "requestId": request_id, "message": message, "nonfatal": true}));
+    emit(
+        json!({"version": 1, "type": "error", "requestId": request_id, "message": message, "nonfatal": true}),
+    );
 }
 
 fn publish_partial(state: &Shared, request_id: &str, result: ProviderResult) {
     let public = {
         let mut guard = state.lock().unwrap();
-        guard.warnings.insert(result.provider.to_string(), result.warnings.clone());
-        guard.metadata.insert(result.provider.to_string(), result.metadata.clone());
+        guard
+            .warnings
+            .insert(result.provider.to_string(), result.warnings.clone());
+        guard
+            .metadata
+            .insert(result.provider.to_string(), result.metadata.clone());
         guard.registry.publish(result.provider, result.items)
     };
-    emit(json!({"version": 1, "type": "snapshot", "requestId": request_id, "provider": result.provider, "full": false, "items": public, "warnings": result.warnings}));
+    emit(
+        json!({"version": 1, "type": "snapshot", "requestId": request_id, "provider": result.provider, "full": false, "items": public, "warnings": result.warnings}),
+    );
 }
 
 fn publish_failure(state: &Shared, request_id: &str, provider: &str, error: &str) {
     let warning = format!("{}: {error}", label(provider));
     let public = {
         let mut guard = state.lock().unwrap();
-        guard.warnings.insert(provider.to_string(), vec![warning.clone()]);
+        guard
+            .warnings
+            .insert(provider.to_string(), vec![warning.clone()]);
         guard.registry.publish(provider, vec![])
     };
-    emit(json!({"version": 1, "type": "snapshot", "requestId": request_id, "provider": provider, "full": false, "items": public, "warnings": [warning]}));
-    emit(json!({"version": 1, "type": "error", "requestId": request_id, "provider": provider, "message": warning, "nonfatal": true}));
+    emit(
+        json!({"version": 1, "type": "snapshot", "requestId": request_id, "provider": provider, "full": false, "items": public, "warnings": [warning]}),
+    );
+    emit(
+        json!({"version": 1, "type": "error", "requestId": request_id, "provider": provider, "message": warning, "nonfatal": true}),
+    );
 }
 
 fn emit_full(state: &Shared, request_id: &str) {
     let guard = state.lock().unwrap();
-    let providers: serde_json::Map<String, Value> =
-        guard.registry.provider_names().into_iter().map(|p| { let rows = guard.registry.provider_public(&p); (p, Value::Array(rows)) }).collect();
+    let providers: serde_json::Map<String, Value> = guard
+        .registry
+        .provider_names()
+        .into_iter()
+        .map(|p| {
+            let rows = guard.registry.provider_public(&p);
+            (p, Value::Array(rows))
+        })
+        .collect();
     let items = guard.registry.all_public();
     let warnings: Vec<&String> = guard.warnings.values().flatten().collect();
-    emit(json!({"version": 1, "type": "snapshot", "requestId": request_id, "full": true, "items": items, "providers": providers, "warnings": warnings}));
+    emit(
+        json!({"version": 1, "type": "snapshot", "requestId": request_id, "full": true, "items": items, "providers": providers, "warnings": warnings}),
+    );
 }
 
 /// Hyprland first (it feeds every other provider), then the rest in parallel.
@@ -105,7 +132,9 @@ fn scan(state: Shared, request_id: String, my_generation: u64, current: Arc<Atom
     let mut ctx = new_context(&state);
     match hyprland_scan(&mut ctx) {
         Ok(result) => {
-            if !live() { return; }
+            if !live() {
+                return;
+            }
             ctx.meta.insert("hyprland".into(), json!({}));
             publish_partial(&state, &request_id, result);
         }
@@ -122,12 +151,16 @@ fn scan(state: Shared, request_id: String, my_generation: u64, current: Arc<Atom
     let names: [&'static str; 6] = ["chrome", "kitty", "tmux", "herdr", "herdr-app", "neovim"];
     for name in names {
         let (tx, ctx) = (tx.clone(), ctx.clone());
-        std::thread::spawn(move || { let _ = tx.send((name, scan_provider(name, &ctx))); });
+        std::thread::spawn(move || {
+            let _ = tx.send((name, scan_provider(name, &ctx)));
+        });
     }
     drop(tx);
     let mut neovim_found = false;
     for (name, outcome) in rx {
-        if !live() { return; }
+        if !live() {
+            return;
+        }
         match outcome {
             Ok(result) => {
                 neovim_found |= name == "neovim" && !result.items.is_empty();
@@ -154,7 +187,17 @@ fn scan(state: Shared, request_id: String, my_generation: u64, current: Arc<Atom
 
 fn looks_stale(error: &str) -> bool {
     let text = error.to_lowercase();
-    ["stale", "closed", "replaced", "reused", "no longer", "disappeared", "not found"].iter().any(|w| text.contains(w))
+    [
+        "stale",
+        "closed",
+        "replaced",
+        "reused",
+        "no longer",
+        "disappeared",
+        "not found",
+    ]
+    .iter()
+    .any(|w| text.contains(w))
 }
 
 fn run_activation(state: &Shared, provider: &str, activation: &Value) -> Res<()> {
@@ -167,12 +210,18 @@ fn run_activation(state: &Shared, provider: &str, activation: &Value) -> Res<()>
 fn rescan(state: &Shared, provider: &str) -> Res<ProviderResult> {
     let mut ctx = new_context(state);
     let hypr = hyprland_scan(&mut ctx)?;
-    if provider == "hyprland" { Ok(hypr) } else { scan_provider(provider, &ctx) }
+    if provider == "hyprland" {
+        Ok(hypr)
+    } else {
+        scan_provider(provider, &ctx)
+    }
 }
 
 fn activate(state: Shared, request_id: String, item_id: String, token: String) {
     let respond = |ok: bool, stale: bool, message: &str| {
-        emit(json!({"version": 1, "type": "activation", "requestId": request_id, "itemId": item_id, "ok": ok, "stale": stale, "message": message}));
+        emit(
+            json!({"version": 1, "type": "activation", "requestId": request_id, "itemId": item_id, "ok": ok, "stale": stale, "message": message}),
+        );
     };
     let reference = state.lock().unwrap().registry.decode(&item_id, &token);
     let reference = match reference {
@@ -180,31 +229,59 @@ fn activate(state: Shared, request_id: String, item_id: String, token: String) {
         Err(e) => return respond(false, true, &e),
     };
     let provider = text(&reference, "provider");
-    if !["hyprland", "chrome", "herdr", "herdr-app", "kitty", "tmux", "neovim"].contains(&provider.as_str()) {
+    if ![
+        "hyprland",
+        "chrome",
+        "herdr",
+        "herdr-app",
+        "kitty",
+        "tmux",
+        "neovim",
+    ]
+    .contains(&provider.as_str())
+    {
         return respond(false, true, "Thing provider is unavailable");
     }
     let outcome = (|| -> Res<()> {
         let current = {
             let guard = state.lock().unwrap();
-            guard.registry.current(&provider, &item_id).filter(|_| guard.registry.token_is_current(&reference)).map(|row| row.thing.activation.clone())
+            guard
+                .registry
+                .current(&provider, &item_id)
+                .filter(|_| guard.registry.token_is_current(&reference))
+                .map(|row| row.thing.activation.clone())
         };
         let refresh = |state: &Shared| -> Res<Value> {
-            let result = rescan(state, &provider).map_err(|_| "That thing closed before it could be focused".to_string())?;
+            let result = rescan(state, &provider)
+                .map_err(|_| "That thing closed before it could be focused".to_string())?;
             let mut guard = state.lock().unwrap();
             guard.registry.publish(result.provider, result.items);
-            guard.registry.current(&provider, &item_id).map(|row| row.thing.activation.clone()).ok_or("That thing closed before it could be focused".to_string())
+            guard
+                .registry
+                .current(&provider, &item_id)
+                .map(|row| row.thing.activation.clone())
+                .ok_or("That thing closed before it could be focused".to_string())
         };
-        let activation = match current { Some(a) => a, None => refresh(&state)? };
+        let activation = match current {
+            Some(a) => a,
+            None => refresh(&state)?,
+        };
         match run_activation(&state, &provider, &activation) {
             Ok(()) => Ok(()),
-            Err(first) if looks_stale(&first) => run_activation(&state, &provider, &refresh(&state)?),
+            Err(first) if looks_stale(&first) => {
+                run_activation(&state, &provider, &refresh(&state)?)
+            }
             Err(other) => Err(other),
         }
     })();
     match outcome {
         Ok(()) => respond(true, false, ""),
         Err(error) => {
-            let message = if error.trim().is_empty() { "Could not focus that thing".to_string() } else { error.clone() };
+            let message = if error.trim().is_empty() {
+                "Could not focus that thing".to_string()
+            } else {
+                error.clone()
+            };
             respond(false, looks_stale(&error), &message);
         }
     }
@@ -215,9 +292,15 @@ fn main() {
         eprintln!("Everything helper must be started with --json-lines");
         std::process::exit(2);
     }
-    let state: Shared = Arc::new(Mutex::new(State { registry: Registry::new(), metadata: HashMap::new(), warnings: BTreeMap::new() }));
+    let state: Shared = Arc::new(Mutex::new(State {
+        registry: Registry::new(),
+        metadata: HashMap::new(),
+        warnings: BTreeMap::new(),
+    }));
     let generation = Arc::new(AtomicU64::new(0));
-    emit(json!({"version": 1, "type": "ready", "pluginVersion": "rust-0.1.0", "capabilities": {"partialSnapshots": true}}));
+    emit(
+        json!({"version": 1, "type": "ready", "pluginVersion": "rust-0.1.0", "capabilities": {"partialSnapshots": true}}),
+    );
 
     for line in std::io::stdin().lock().lines() {
         let Ok(line) = line else { break };
@@ -228,7 +311,10 @@ fn main() {
         let message = Value::Object(message);
         let request_id = text(&message, "id");
         if message.get("version") != Some(&json!(1)) || request_id.is_empty() {
-            protocol_error(&request_id, "Unsupported protocol version or missing request id");
+            protocol_error(
+                &request_id,
+                "Unsupported protocol version or missing request id",
+            );
             continue;
         }
         match text(&message, "type").as_str() {

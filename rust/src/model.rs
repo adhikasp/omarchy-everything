@@ -85,7 +85,11 @@ impl Thing {
             id,
             kind,
             provider,
-            title: if title.is_empty() { "Untitled".into() } else { title.into() },
+            title: if title.is_empty() {
+                "Untitled".into()
+            } else {
+                title.into()
+            },
             icon_hints: vec![],
             icon_file: String::new(),
             icon_plate: String::new(),
@@ -137,15 +141,18 @@ fn dedupe(items: Vec<Thing>) -> Vec<Thing> {
             Some(position) => {
                 let existing = &mut out[position];
                 if existing.activation == item.activation && existing.kind == item.kind {
-                    existing.icon_hints = unique([existing.icon_hints.clone(), item.icon_hints].concat());
-                    existing.search_terms = unique([existing.search_terms.clone(), item.search_terms].concat());
+                    existing.icon_hints =
+                        unique([existing.icon_hints.clone(), item.icon_hints].concat());
+                    existing.search_terms =
+                        unique([existing.search_terms.clone(), item.search_terms].concat());
                     existing.badges = unique([existing.badges.clone(), item.badges].concat());
                     existing.active |= item.active;
                     existing.recency = existing.recency.max(item.recency);
                 } else {
                     let mut count = 2;
                     let base = item.id.clone();
-                    let mut id = stable_id(item.provider, &["collision", &base, &count.to_string()]);
+                    let mut id =
+                        stable_id(item.provider, &["collision", &base, &count.to_string()]);
                     while out.iter().any(|row| row.id == id) {
                         count += 1;
                         id = stable_id(item.provider, &["collision", &base, &count.to_string()]);
@@ -178,7 +185,11 @@ impl Registry {
         if let Ok(mut file) = std::fs::File::open("/dev/urandom") {
             let _ = file.read_exact(&mut secret);
         }
-        Registry { secret, generations: BTreeMap::new(), providers: BTreeMap::new() }
+        Registry {
+            secret,
+            generations: BTreeMap::new(),
+            providers: BTreeMap::new(),
+        }
     }
 
     fn sign(&self, raw: &[u8]) -> Vec<u8> {
@@ -190,7 +201,11 @@ impl Registry {
     fn encode(&self, payload: &Value) -> String {
         // serde_json keeps object keys sorted, matching Python's sort_keys.
         let raw = serde_json::to_vec(payload).unwrap_or_default();
-        format!("v1.{}.{}", URL_SAFE_NO_PAD.encode(&raw), URL_SAFE_NO_PAD.encode(self.sign(&raw)))
+        format!(
+            "v1.{}.{}",
+            URL_SAFE_NO_PAD.encode(&raw),
+            URL_SAFE_NO_PAD.encode(self.sign(&raw))
+        )
     }
 
     pub fn decode(&self, item_id: &str, token: &str) -> Result<Value, String> {
@@ -199,12 +214,18 @@ impl Registry {
         let (Some("v1"), Some(body), Some(signature)) = (prefix, body, signature) else {
             return Err("malformed activation token".into());
         };
-        let raw = URL_SAFE_NO_PAD.decode(body).map_err(|_| "malformed activation token")?;
-        let supplied = URL_SAFE_NO_PAD.decode(signature).map_err(|_| "malformed activation token")?;
+        let raw = URL_SAFE_NO_PAD
+            .decode(body)
+            .map_err(|_| "malformed activation token")?;
+        let supplied = URL_SAFE_NO_PAD
+            .decode(signature)
+            .map_err(|_| "malformed activation token")?;
         let mut mac = Hmac::<Sha256>::new_from_slice(&self.secret).expect("hmac key");
         mac.update(&raw);
-        mac.verify_slice(&supplied).map_err(|_| "activation token authentication failed")?;
-        let payload: Value = serde_json::from_slice(&raw).map_err(|_| "activation token payload is invalid")?;
+        mac.verify_slice(&supplied)
+            .map_err(|_| "activation token authentication failed")?;
+        let payload: Value =
+            serde_json::from_slice(&raw).map_err(|_| "activation token payload is invalid")?;
         if payload.get("id").and_then(Value::as_str) != Some(item_id) {
             return Err("activation token does not belong to this item".into());
         }
@@ -224,18 +245,28 @@ impl Registry {
                 "activation": thing.activation,
             }));
             public.push(thing.public(&token));
-            published.push(Published { thing, token, generation });
+            published.push(Published {
+                thing,
+                token,
+                generation,
+            });
         }
         self.providers.insert(provider.to_string(), published);
         public
     }
 
     pub fn current(&self, provider: &str, item_id: &str) -> Option<&Published> {
-        self.providers.get(provider)?.iter().find(|row| row.thing.id == item_id)
+        self.providers
+            .get(provider)?
+            .iter()
+            .find(|row| row.thing.id == item_id)
     }
 
     pub fn token_is_current(&self, payload: &Value) -> bool {
-        let provider = payload.get("provider").and_then(Value::as_str).unwrap_or("");
+        let provider = payload
+            .get("provider")
+            .and_then(Value::as_str)
+            .unwrap_or("");
         let id = payload.get("id").and_then(Value::as_str).unwrap_or("");
         self.current(provider, id)
             .map(|row| payload.get("generation").and_then(Value::as_u64) == Some(row.generation))
@@ -243,13 +274,21 @@ impl Registry {
     }
 
     pub fn all_public(&self) -> Vec<Value> {
-        self.providers.values().flatten().map(|row| row.thing.public(&row.token)).collect()
+        self.providers
+            .values()
+            .flatten()
+            .map(|row| row.thing.public(&row.token))
+            .collect()
     }
 
     pub fn provider_public(&self, provider: &str) -> Vec<Value> {
         self.providers
             .get(provider)
-            .map(|rows| rows.iter().map(|row| row.thing.public(&row.token)).collect())
+            .map(|rows| {
+                rows.iter()
+                    .map(|row| row.thing.public(&row.token))
+                    .collect()
+            })
             .unwrap_or_default()
     }
 
@@ -271,7 +310,10 @@ mod tests {
     #[test]
     fn ui_uuid_is_stable_and_matches_python() {
         // uuid5(NS, '["Hyprland","window","hyprland:0x1/2/3"]') from the Python helper.
-        assert_eq!(ui_uuid("Hyprland", "window", "hyprland:0x1/2/3"), ui_uuid("Hyprland", "window", "hyprland:0x1/2/3"));
+        assert_eq!(
+            ui_uuid("Hyprland", "window", "hyprland:0x1/2/3"),
+            ui_uuid("Hyprland", "window", "hyprland:0x1/2/3")
+        );
         assert_eq!(ui_uuid("a", "b", "c").len(), 36);
     }
 
