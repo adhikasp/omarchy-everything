@@ -64,7 +64,7 @@ The search box is also a toolbox. Answers appear as the first row; <kbd>Enter</k
 Start with `?` and Everything runs [opencode](https://opencode.ai) in a project you choose. The answer lands in the panel a few seconds later, formatted.
 
 - <kbd>Enter</kbd> copies the answer.
-- <kbd>Ctrl</kbd>+<kbd>O</kbd> reopens the same conversation in opencode, so you can keep going.
+- <kbd>Ctrl</kbd>+<kbd>O</kbd> reopens the same conversation in opencode — a new tab in the selected space of your [Herdr](https://herdr.dev) desktop app when it is running, a plain terminal otherwise — so you can keep going.
 - Closed the panel too early? The answer arrives as a notification.
 
 <img src="docs/media/ask.webp" alt="Asking why a test is flaky and getting a formatted answer" width="760">
@@ -91,6 +91,7 @@ That's it. The Omarchy menu stays one search away: type `setup`, `theme` or `upd
 
 **Optional extras:**
 - [opencode](https://opencode.ai) for `?` questions.
+- The [Herdr](https://herdr.dev) desktop app: <kbd>Ctrl</kbd>+<kbd>O</kbd> then opens the conversation as a tab in its selected space instead of a standalone terminal.
 - The [Inter](https://rsms.me/inter/) font (package `inter-font`): the panel uses it when installed, otherwise Noto Sans.
 - A browser-tabs host for Chrome tab results. It is any process serving the local socket described in [providers](docs/providers.md); without one, Chrome appears only as its window.
 

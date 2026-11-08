@@ -649,10 +649,14 @@ Item {
     bumpAnswers()
   }
 
+  // Ctrl+O: continue the conversation where agents live. The Herdr desktop
+  // app gets a new tab in its selected space; a plain terminal is the
+  // fallback. The argv is built in InstantAnswers.js so the text always
+  // travels as arguments, never as shell code.
   function openAskInOpencode() {
     if (!askState.sessionId) return
-    Quickshell.execDetached(["xdg-terminal-exec", "opencode", "--session",
-      askState.sessionId, askState.workspace || homeDir])
+    Quickshell.execDetached(Answers.openAskArgv(
+      askState.sessionId, askState.workspace || homeDir, askState.prompt))
   }
 
   function copyText(text, label) {

@@ -861,6 +861,21 @@ assert.doesNotMatch(serviceQml, /function refresh\s*\(/,
   assert.equal(done.status, "done")
   assert.equal(A.applyAskEvent(A.emptyAskState(), JSON.stringify({ sessionID: "ses_; rm -rf" })).sessionId, "",
     "only well-formed session ids are kept")
+
+  // Ctrl+O: an app tab first, a plain terminal when herdr-app is unavailable
+  const open = Array.from(A.openAskArgv("ses_abc123", "/home/me/pi-life", "why  is\nthis flaky?"))
+  assert.deepEqual(open.slice(0, 4), ["sh", "-c", open[2], "sh"], "one shell, values as arguments")
+  assert.equal(open[4], "ask · why is this flaky?", "the app tab is named after the prompt")
+  assert.equal(open[5], "/home/me/pi-life", "the tab starts in the ask workspace")
+  assert.deepEqual(JSON.parse(open[6]), ["opencode", "--session", "ses_abc123"])
+  assert.equal(open[7], "ses_abc123")
+  assert.match(open[2], /herdr-app do tab\.new --name "\$1" --folder "\$2" --argv "\$3"/)
+  assert.match(open[2], /xdg-terminal-exec opencode --session "\$4" "\$2"/)
+  assert.ok(open[2].indexOf("flaky") < 0 && open[2].indexOf("ses_abc123") < 0,
+    "the script interpolates nothing: prompt and session stay arguments")
+  const hostile = Array.from(A.openAskArgv("ses_abc123", "$(pwd)", "$(rm -rf ~) `id`"))
+  assert.equal(hostile[4], "ask · $(rm -rf ~) `id`")
+  assert.equal(hostile[5], "$(pwd)", "a metacharacter workspace is still one argument")
 }
 
 console.log("model.test.js: all tests passed")

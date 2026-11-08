@@ -51,6 +51,11 @@ space. JSON events are folded by `applyAskEvent`; state objects are replaced,
 never mutated, because QML only notifies a `var` property for a new object.
 The answer renders as Markdown only after `safeMarkdown` strips images and
 escapes raw HTML outside code. Ctrl+O reopens the session with
+`opencode --session <id>` in the workspace, preferably as a new tab in the
+selected space of the [Herdr](https://herdr.dev) desktop app
+(`herdr-app do tab.new`, a tab named `ask · <prompt>`), so the conversation
+continues in the same terminal surface as the other agents; when `herdr-app`
+is missing or its window is closed the same command falls back to
 `xdg-terminal-exec opencode --session <id> <workspace>`. If no panel is open
 when the answer lands, it is delivered as a notification. Timeout: 5 min.
 

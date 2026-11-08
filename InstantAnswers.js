@@ -896,6 +896,23 @@ function askAnswers(text, ctx) {
   return { items: items, exclusive: true }
 }
 
+// The command behind Ctrl+O: continue the session in the Herdr desktop app
+// (`herdr-app do tab.new`, so the conversation joins the other agents in the
+// selected space), falling back to a plain terminal when herdr-app is missing
+// or its window is closed, because `herdr-app do` exits non-zero then.
+// Returns an argv for Quickshell.execDetached: every value travels as a
+// positional argument, so a prompt or session id can never become shell code.
+function openAskArgv(sessionId, workspace, prompt) {
+  var session = String(sessionId || "").trim()
+  var dir = String(workspace || "")
+  var label = String(prompt || "").replace(/\s+/g, " ").trim().slice(0, 40)
+  var appArgv = JSON.stringify(["opencode", "--session", session])
+  return ["sh", "-c",
+    'herdr-app do tab.new --name "$1" --folder "$2" --argv "$3" >/dev/null 2>&1 && exit 0\n' +
+    'exec xdg-terminal-exec opencode --session "$4" "$2"',
+    "sh", label ? "ask · " + label : "ask", dir, appArgv, session]
+}
+
 // Agent output is untrusted Markdown. Images and raw HTML are neutralised so
 // rendering it can never fetch a resource; code keeps its literal characters.
 function safeMarkdown(text) {
