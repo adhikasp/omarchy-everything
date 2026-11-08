@@ -67,6 +67,8 @@ pub struct Thing {
     pub icon_hints: Vec<String>,
     /// Absolute path of a helper-written icon image (browser favicons).
     pub icon_file: String,
+    /// "light" or "dark" backing plate for icons that would vanish on the theme, else empty.
+    pub icon_plate: String,
     pub context: String,
     pub search_terms: Vec<String>,
     pub parent_id: String,
@@ -86,6 +88,7 @@ impl Thing {
             title: if title.is_empty() { "Untitled".into() } else { title.into() },
             icon_hints: vec![],
             icon_file: String::new(),
+            icon_plate: String::new(),
             context: String::new(),
             search_terms: vec![],
             parent_id: String::new(),
@@ -113,6 +116,7 @@ impl Thing {
             "title": self.title,
             "iconHints": self.icon_hints,
             "iconFile": self.icon_file,
+            "iconPlate": self.icon_plate,
             "context": self.context,
             "searchTerms": self.search_terms,
             "parentId": self.parent_id,

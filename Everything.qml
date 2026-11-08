@@ -1514,15 +1514,15 @@ Panel {
               sourceSize.height: height * Screen.devicePixelRatio
             }
 
-            // Site favicon cached by the helper (Chrome tabs); keeps its own colors. Many
-            // icons are dark on transparent (GitHub), so they sit on a light rounded plate.
+            // Site favicon cached by the helper (Chrome tabs); keeps its own colors. Icons the
+            // helper flags as very light or very dark sit on a contrasting rounded plate.
             Rectangle {
               anchors.centerIn: faviconImage
               width: faviconImage.width + Style.space(1)
               height: width
               radius: Style.space(1)
-              color: "#f1f1f1"
-              visible: faviconImage.visible
+              color: row.modelData.iconPlate === "dark" ? "#2b2b2b" : "#f1f1f1"
+              visible: faviconImage.visible && (row.modelData.iconPlate === "light" || row.modelData.iconPlate === "dark")
             }
 
             Image {
@@ -1569,7 +1569,7 @@ Panel {
               id: mappedWindowGlyph
               objectName: "everything-window-glyph-" + row.index
               anchors.fill: parent
-              visible: row.windowAppGlyph.length > 0
+              visible: row.windowAppGlyph.length > 0 && !faviconImage.visible
               text: row.windowAppGlyph
               color: row.iconColor
               fontFamily: Style.font.family

@@ -258,6 +258,12 @@ fn url_host(url: &str) -> String {
     host.split(':').next().unwrap_or("").to_lowercase()
 }
 
+/// Mean icon brightness (0-255, from the extension) to a backing plate: very light icons
+/// (GitHub's dark-mode octocat) need a dark plate, very dark ones a light plate.
+fn icon_plate(luminance: i64) -> &'static str {
+    match luminance { l if l < 0 => "", l if l >= 190 => "dark", l if l <= 100 => "light", _ => "" }
+}
+
 /// Decode a `data:image/...;base64,` favicon from the extension into a
 /// content-addressed file under the user cache dir and return its path ("" on
 /// anything unexpected). Only PNG, ICO, GIF, WebP and JPEG payloads are kept.
@@ -304,6 +310,7 @@ pub fn chrome_scan(ctx: &Context) -> Res<ProviderResult> {
         let mut thing = Thing::new(stable_id("chrome", &[&tab_id.to_string()]), "browser-tab", "Chrome", &title);
         thing.icon_hints = vec!["google-chrome".into()];
         thing.icon_file = favicon_file(&text(tab, "favIcon"));
+        if !thing.icon_file.is_empty() { thing.icon_plate = icon_plate(tab.get("favIconLum").and_then(Value::as_i64).unwrap_or(-1)).into(); }
         thing.context = url_host(&url);
         thing.search_terms = vec!["chrome".into(), url.clone()];
         thing.badges = vec!["Tab".into()];
@@ -699,6 +706,14 @@ mod tests {
         assert_eq!(url_host("https://User@News.YCombinator.com:8443/item?id=1"), "news.ycombinator.com");
         assert_eq!(url_host("chrome://extensions"), "extensions");
         assert_eq!(url_host("not a url"), "");
+    }
+
+    #[test]
+    fn plates_follow_brightness() {
+        assert_eq!(icon_plate(-1), "");
+        assert_eq!(icon_plate(255), "dark");
+        assert_eq!(icon_plate(70), "light");
+        assert_eq!(icon_plate(137), "");
     }
 
     #[test]
