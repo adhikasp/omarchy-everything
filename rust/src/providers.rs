@@ -91,6 +91,35 @@ pub fn run_cmd(argv: &[&str], timeout: f64) -> Res<(i32, String, String)> {
     }
 }
 
+/// Like [`run_cmd`], for CLIs that answer on stdin (`hc connect`): the input is
+/// written and its end closes the pipe, which is how they know to reply and exit.
+pub fn run_cmd_input(argv: &[&str], input: &str, timeout: f64) -> Res<(i32, String, String)> {
+    let (tx, rx) = mpsc::channel();
+    let owned: Vec<String> = argv.iter().map(|s| s.to_string()).collect();
+    let input = input.to_string();
+    std::thread::spawn(move || {
+        let out = Command::new(&owned[0]).args(&owned[1..])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                if let Some(mut stdin) = child.stdin.take() { stdin.write_all(input.as_bytes())?; }
+                child.wait_with_output()
+            });
+        let _ = tx.send(out);
+    });
+    match rx.recv_timeout(Duration::from_secs_f64(timeout)) {
+        Ok(Ok(out)) => Ok((
+            out.status.code().unwrap_or(-1),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
+        )),
+        Ok(Err(error)) => Err(format!("{} failed: {error}", argv[0])),
+        Err(_) => Err(format!("{} timed out", argv[0])),
+    }
+}
+
 pub fn unix_json_request(path: &str, request: &Value, timeout: f64) -> Res<Value> {
     if !path.starts_with('/') || path.contains('\0') {
         return Err("Unix socket path must be an absolute NUL-free path".into());

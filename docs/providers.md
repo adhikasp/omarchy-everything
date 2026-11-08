@@ -76,11 +76,16 @@ is focused; detached or ambiguous-host sessions open a fresh
 ## Herdr app
 
 The Herdr desktop app (herdr-app over herdr-core) has no per-session socket,
-so discovery runs `herdr-app ls` for spaces, tabs and terminals and
-`hc ls --json` for working directories. Only terminals that report an agent
-app become agent things; spaces map to the workspace kind. Either command
-failing is a nonfatal provider warning, and the TUI provider above is
-unaffected.
+so discovery runs `herdr-app ls` for spaces, tabs and terminals, and asks
+herdr-core once for each terminal's directory and pane title
+(`terminal.list` over `hc connect`, falling back to `hc ls --json` for
+directories alone). Only terminals that report an agent app become agent
+things; spaces map to the workspace kind. An agent is named by the title its
+program paints, because a tab keeps one name while the agents in it are
+retitled (OpenCode's "OC | " prefix is dropped, and a title that is only the
+program's name, a path, a shell prompt, an address or a number is ignored in
+favour of the tab name). Either command failing is a nonfatal provider
+warning, and the TUI provider above is unaffected.
 
 Activation raises the app window with `herdr-app-active --focus` (falling back
 to `herdr-app-open`), then runs `herdr-app do agent.focus --terminal <id>`,
