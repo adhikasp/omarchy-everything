@@ -1514,12 +1514,22 @@ Panel {
               sourceSize.height: height * Screen.devicePixelRatio
             }
 
-            // Site favicon cached by the helper (Chrome tabs); keeps its own colors.
+            // Site favicon cached by the helper (Chrome tabs); keeps its own colors. Many
+            // icons are dark on transparent (GitHub), so they sit on a light rounded plate.
+            Rectangle {
+              anchors.centerIn: faviconImage
+              width: faviconImage.width + Style.space(1)
+              height: width
+              radius: Style.space(1)
+              color: "#f1f1f1"
+              visible: faviconImage.visible
+            }
+
             Image {
               id: faviconImage
               objectName: "everything-favicon-" + row.index
               anchors.centerIn: parent
-              width: Math.min(parent.width, root.iconPx + Style.space(2))
+              width: Math.min(parent.width - Style.space(1), root.iconPx)
               height: width
               visible: row.faviconSource.length > 0 && status === Image.Ready
               source: row.faviconSource
