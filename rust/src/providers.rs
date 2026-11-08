@@ -371,6 +371,7 @@ pub fn activate_provider(provider: &str, activation: &Value, ctx: &mut Context) 
         "hyprland" => hyprland_activate(activation, ctx),
         "chrome" => chrome_activate(activation),
         "herdr" => herdr_activate(activation, ctx),
+        "herdr-app" => crate::herdr_app::activate(activation, ctx),
         "kitty" => crate::kitty::activate(activation, ctx),
         "tmux" => crate::tmux::activate(activation, ctx),
         "neovim" => crate::neovim::activate(activation, ctx),

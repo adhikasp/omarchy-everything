@@ -4,6 +4,7 @@
 //! Ported providers: Hyprland, Chrome (Screen Context extension), Herdr, Kitty,
 //! tmux and Neovim.
 
+mod herdr_app;
 mod kitty;
 mod model;
 mod neovim;
@@ -36,6 +37,7 @@ fn scan_provider(name: &str, ctx: &Context) -> Res<ProviderResult> {
     match name {
         "chrome" => chrome_scan(ctx),
         "herdr" => herdr_scan(ctx),
+        "herdr-app" => herdr_app::scan(ctx),
         "kitty" => kitty::scan(ctx),
         "tmux" => tmux::scan(ctx),
         "neovim" => neovim::scan(ctx),
@@ -53,6 +55,7 @@ fn label(provider: &str) -> &str {
     match provider {
         "hyprland" => "Hyprland",
         "herdr" => "Herdr",
+        "herdr-app" => "Herdr app",
         "chrome" => "Chrome",
         "kitty" => "Kitty",
         "tmux" => "tmux",
@@ -116,7 +119,7 @@ fn scan(state: Shared, request_id: String, my_generation: u64, current: Arc<Atom
     }
     let ctx = Arc::new(ctx);
     let (tx, rx) = mpsc::channel::<(&'static str, Res<ProviderResult>)>();
-    let names: [&'static str; 5] = ["chrome", "kitty", "tmux", "herdr", "neovim"];
+    let names: [&'static str; 6] = ["chrome", "kitty", "tmux", "herdr", "herdr-app", "neovim"];
     for name in names {
         let (tx, ctx) = (tx.clone(), ctx.clone());
         std::thread::spawn(move || { let _ = tx.send((name, scan_provider(name, &ctx))); });
@@ -177,7 +180,7 @@ fn activate(state: Shared, request_id: String, item_id: String, token: String) {
         Err(e) => return respond(false, true, &e),
     };
     let provider = text(&reference, "provider");
-    if !["hyprland", "chrome", "herdr", "kitty", "tmux", "neovim"].contains(&provider.as_str()) {
+    if !["hyprland", "chrome", "herdr", "herdr-app", "kitty", "tmux", "neovim"].contains(&provider.as_str()) {
         return respond(false, true, "Thing provider is unavailable");
     }
     let outcome = (|| -> Res<()> {

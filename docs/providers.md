@@ -73,6 +73,20 @@ fails activation before terminal routing. One unambiguous attached local client
 is focused; detached or ambiguous-host sessions open a fresh
 `herdr session attach`. Remote sessions are not discovered.
 
+## Herdr app
+
+The Herdr desktop app (herdr-app over herdr-core) has no per-session socket,
+so discovery runs `herdr-app ls` for spaces, tabs and terminals and
+`hc ls --json` for working directories. Only terminals that report an agent
+app become agent things; spaces map to the workspace kind. Either command
+failing is a nonfatal provider warning, and the TUI provider above is
+unaffected.
+
+Activation raises the app window with `herdr-app-active --focus` (falling back
+to `herdr-app-open`), then runs `herdr-app do agent.focus --terminal <id>`,
+`space.select --id <id>`, or `space.select` followed by `tab.select`. IDs must
+be nonempty, must not start with `-`, and contain no NULs or line breaks.
+
 ## Neovim
 
 Everything accepts current-user Unix sockets in the current runtime directory
