@@ -36,7 +36,7 @@ shell's `PointerMoveGate`; opening, keyboard navigation, and list mutations
 reset that gate so delegates appearing beneath a stationary pointer cannot
 change the highlighted thing.
 Opening captures the focused Hyprland window class once (`captureFocusContext`);
-`Model.contextLeadKind` maps it to a lead kind (Chrome → `browser-tab`, a terminal or the Herdr app or the Herdr app
+`Model.contextLeadKind` maps it to a lead kind (Chrome → `browser-tab`, a terminal or the Herdr app
 → `herdr-agent`, else none; the helper has not scanned yet at that moment, so
 it cannot be consulted) that `rank` sorts first
 when the query is empty. A query restores the normal group order.
